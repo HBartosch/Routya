@@ -1,14 +1,16 @@
-﻿using System.Reflection;
-using BenchmarkDotNet.Attributes;
+﻿using BenchmarkDotNet.Attributes;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
-using Routya.Core.Dispatchers.Notifications;
 using Routya.Core.Extensions;
+using System.Reflection;
 
 namespace Routya.Notification.Benchmark;
 
 [MemoryDiagnoser]
+[GcServer(true)]
+[GcForce(true)]
+[DisassemblyDiagnoser]
 public class BenchmarkNotificationDispatch
 {
     private IRoutya _routyaCompiled = default!;
@@ -23,8 +25,6 @@ public class BenchmarkNotificationDispatch
         services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Root, Assembly.GetExecutingAssembly());
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
-
-        services.AddSingleton<CompiledNotificationInvokerDispatcher>();
 
         var provider = services.BuildServiceProvider();
 

@@ -1,6 +1,7 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
 using Routya.Core.Abstractions;
+using Routya.Core.Dispatchers.Configurations;
 using Routya.Core.Dispatchers.Notifications;
 using Routya.Core.Dispatchers.Requests;
 
@@ -8,12 +9,12 @@ namespace Routya.Core.Dispatchers
 {
     public class DefaultRoutya : IRoutya
     {
-        private readonly CompiledRequestInvokerDispatcher _requestDispatcher;
-        private readonly CompiledNotificationInvokerDispatcher _notificationDispatcher;
+        private readonly IRoutyaRequestDispatcher _requestDispatcher;
+        private readonly IRoutyaNotificationDispatcher _notificationDispatcher;
 
         public DefaultRoutya(
-            CompiledRequestInvokerDispatcher requestDispatcher,
-            CompiledNotificationInvokerDispatcher notificationDispatcher)
+            IRoutyaRequestDispatcher requestDispatcher,
+            IRoutyaNotificationDispatcher notificationDispatcher)
         {
             _requestDispatcher = requestDispatcher;
             _notificationDispatcher = notificationDispatcher;
@@ -24,7 +25,7 @@ namespace Routya.Core.Dispatchers
             CancellationToken cancellationToken = default) 
                 where TNotification : INotification
         {
-            return _notificationDispatcher.Publish(notification, cancellationToken);
+            return _notificationDispatcher.PublishAsync(notification, NotificationDispatchStrategy.Sequential, cancellationToken);
         }
 
         public Task PublishParallelAsync<TNotification>(
@@ -32,7 +33,7 @@ namespace Routya.Core.Dispatchers
             CancellationToken cancellationToken = default)
                 where TNotification : INotification
         {
-            return _notificationDispatcher.PublishParallel(notification, cancellationToken);
+            return _notificationDispatcher.PublishAsync(notification, NotificationDispatchStrategy.Parallel, cancellationToken);
         }
 
         public TResponse Send<TRequest, TResponse>(TRequest request) 

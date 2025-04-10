@@ -1,8 +1,8 @@
-﻿using System.Reflection;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
 using Routya.Core.Extensions;
 using Routya.Notification.Demo.Notifications;
+using System.Reflection;
 
 namespace Routya.Notification.Demo;
 

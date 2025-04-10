@@ -20,9 +20,9 @@ namespace Routya.Core.Extensions
             var options = new RoutyaDispatcherOptions();
             configure?.Invoke(options);
 
-            services.AddSingleton(sp => new CompiledRequestInvokerDispatcher(sp, options));
+            services.AddSingleton<IRoutyaRequestDispatcher>(sp => new CompiledRequestInvokerDispatcher(sp, options));
 
-            services.AddSingleton(sp => new CompiledNotificationInvokerDispatcher(sp, options));
+            services.AddSingleton<IRoutyaNotificationDispatcher>(sp => new CompiledNotificationDispatcher(sp));
 
             services.AddSingleton<IRoutya, DefaultRoutya>();
 
