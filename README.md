@@ -25,11 +25,11 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 Latest prerelease version:
 ```bash
-dotnet add package Routya.Core --version 1.0.0-alpha.2
+dotnet add package Routya.Core --version 1.0.0-alpha.4
 ```
 ## 🚀 Quick Start
 
-#Dependency injection
+# Dependency injection
 On startup you can define if **Routya** should create a new instance of the service provider each time it is called or work on the root service provider. 
 
 Note!!! By default scope is enabled

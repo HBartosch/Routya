@@ -1,4 +1,7 @@
 # Routya
+![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/dotnet.yml?label=CI&style=flat-square)
+[![NuGet](https://img.shields.io/nuget/v/Routya.Core?label=nuget&style=flat-square)](https://www.nuget.org/packages/Routya.Core)
+[![Downloads](https://img.shields.io/nuget/dt/Routya.Core?label=downloads&style=flat-square)](https://www.nuget.org/packages/Routya.Core)
 
 **Routya** is a fast, lightweight message dispatching library built for .NET applications that use the CQRS pattern.  
 It provides a flexible way to route requests/responses and notifications to their respective handlers with minimal overhead and high performance.
@@ -22,11 +25,11 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 Latest prerelease version:
 ```bash
-dotnet add package Routya.Core --version 1.0.0-alpha.2
+dotnet add package Routya.Core --version 1.0.0-alpha.4
 ```
 ## 🚀 Quick Start
 
-#Dependency injection
+# Dependency injection
 On startup you can define if **Routya** should create a new instance of the service provider each time it is called or work on the root service provider. 
 
 Note!!! By default scope is enabled
@@ -50,6 +53,13 @@ Note!!! By default you would have to manually register your Requests/Notificatio
 ```
 
 # Requests
+
+### 📊 Benchmark Results
+Note! Benchmarks were run with handlers returning only a string using BenchmarkDotNet
+| Method           | Mean      | Error    | StdDev   | Code Size | Allocated |
+|----------------- |----------:|---------:|---------:|----------:|----------:|
+| Routya_Send      |  76.59 us | 1.491 us | 1.831 us |   8,684 B |   6.31 KB |
+| Routya_SendAsync | 246.53 us | 1.848 us | 1.638 us |   8,813 B |   8.94 KB |
 
 Define a request
 ```C#
@@ -104,6 +114,13 @@ or async
 ```
 
 # Notifications
+
+### 📊 Benchmark Results
+Note! Benchmarks were run with handlers returning only Task.Completed using BenchmarkDotNet
+| Method                    | Mean     | Error   | StdDev  | Code Size | Gen0   | Allocated |
+|-------------------------- |---------:|--------:|--------:|----------:|-------:|----------:|
+| RoutyaCompiled_Sequential | 315.9 ns | 2.21 ns | 1.96 ns |     368 B | 0.0019 |     528 B |
+| RoutyaCompiled_Parallel   | 338.1 ns | 2.84 ns | 2.52 ns |     368 B | 0.0024 |     648 B |
 
 Define your notification
 ```C#
