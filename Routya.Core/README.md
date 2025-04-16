@@ -1,7 +1,7 @@
 # Routya
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/dotnet.yml?label=CI&style=flat-square)
-[![NuGet](https://img.shields.io/nuget/v/Routya.Core?label=nuget&style=flat-square)](https://www.nuget.org/packages/Routya.Core)
-[![Downloads](https://img.shields.io/nuget/dt/Routya.Core?label=downloads&style=flat-square)](https://www.nuget.org/packages/Routya.Core)
+[![NuGet](https://img.shields.io/nuget/v/Routya.Core.svg)](https://www.nuget.org/packages/Routya.Core)
+[![NuGet](https://img.shields.io/nuget/dt/Routya.Core.svg)](https://www.nuget.org/packages/Routya.Core)
 
 **Routya** is a fast, lightweight message dispatching library built for .NET applications that use the CQRS pattern.  
 It provides a flexible way to route requests/responses and notifications to their respective handlers with minimal overhead and high performance.
