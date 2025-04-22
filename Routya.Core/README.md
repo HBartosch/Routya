@@ -34,17 +34,28 @@ On startup you can define if **Routya** should create a new instance of the serv
 
 Note!!! By default scope is enabled
 
-Scoped
+# Scoped
+Creates a new DI scope for each dispatch
+- Safely supports handlers registered as Scoped
+- ✅ Use this if your handlers depend on:
+  - EF Core DbContext
+  - IHttpContextAccessor
+  - IMemoryCache, etc.
 ```C#
     builder.Services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Scoped, Assembly.GetExecutingAssembly());
 ```
 
-Root
+# Root
+Fastest option 
+- avoids creating a service scope per dispatch
+- Resolves handlers directly from the root IServiceProvider
+- ✅ Ideal for stateless handlers that are registered as Transient or Singleton
+- ⚠️ Will fail if your handler is registered as Scoped (e.g., it uses DbContext or IHttpContextAccessor)
 ```C#
     builder.Services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Root, Assembly.GetExecutingAssembly());
 ```
 
-You can add an auto registration of IRequestHandler, IAsyncRequestHandler and INotificationHandler by adding the executing assembly
+You can add an auto registration of IRequestHandler, IAsyncRequestHandler and INotificationHandler by adding the executing assembly. This however registers all your request handlers as scoped.
 
 Note!!! By default you would have to manually register your Requests/Notifications and Handlers
 
@@ -98,7 +109,7 @@ Inject the **IRoutya** interface and dispatch your requests in sync...
 
       public Example(IRoutya dispatcher)
       {
-         _dispatcher = dispatcher
+         _dispatcher = dispatcher;
       }
     }
 ```
@@ -199,10 +210,3 @@ or in parallel
 ```C#
      await dispatcher.PublishParallelAsync(new UserRegisteredNotification("john.doe@example.com"));
 ```
-
-
-
-
-
-
-
