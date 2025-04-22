@@ -18,7 +18,7 @@ namespace Routya.Core.Abstractions
             CancellationToken cancellationToken = default)
                 where TNotification : INotification;
 
-        public Task PublishParallelAsync<TNotification>(
+        Task PublishParallelAsync<TNotification>(
            TNotification notification,
            CancellationToken cancellationToken = default)
                where TNotification : INotification;

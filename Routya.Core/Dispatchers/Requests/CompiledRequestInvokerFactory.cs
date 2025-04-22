@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace Routya.Core.Dispatchers.Requests
 {
-    public static class CompiledRequestInvokerFactory
+    internal static class CompiledRequestInvokerFactory
     {
         public static Func<IServiceProvider, TRequest, TResponse> CreateSync<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>

@@ -1,7 +1,7 @@
 # Routya
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/dotnet.yml?label=CI&style=flat-square)
 [![NuGet](https://img.shields.io/nuget/v/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
-[![NuGet](https://img.shields.io/nuget/dt/Routya.Core.svg)](https://www.nuget.org/packages/Routya.Core)
+[![NuGet](https://img.shields.io/nuget/dt/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
 
 **Routya** is a fast, lightweight message dispatching library built for .NET applications that use the CQRS pattern.  
 It provides a flexible way to route requests/responses and notifications to their respective handlers with minimal overhead and high performance.
@@ -92,15 +92,15 @@ or Implement the async handler
 
 Inject the **IRoutya** interface and dispatch your requests in sync...
 ```C#
-public class Example : ControllerBase
-{
-  private readonly IRoutya _dispatcher;
+    public class Example : ControllerBase
+    {
+      private readonly IRoutya _dispatcher;
 
-  public Example(IRoutya dispatcher)
-  {
-     _dispatcher = dispatcher
-  }
-}
+      public Example(IRoutya dispatcher)
+      {
+         _dispatcher = dispatcher
+      }
+    }
 ```
 
 ```C#
@@ -111,6 +111,30 @@ public class Example : ControllerBase
 or async
 ```C#
     await _dispatcher.SendAsync<HelloRequest, string>(new HelloRequest("Async World"));
+```
+
+# Pipeline Behaviors
+You can add pipeline behaviors to execute around your requests. These behaviors need to be registered manually and execute in the order they are registered.
+```C#
+     services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+     services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));   
+```
+
+In the following example the LoggingBehavior will write to console before your request, wait for the request(in the example above first execute the ValidationBehavior and then in the ValidationBehavior it will execute the request) to execute and then write to the console afterward executing the request.
+```C#
+    public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+    {
+        public async Task<TResponse> Handle(
+            TRequest request,
+            Routya.Core.Abstractions.RequestHandlerDelegate<TResponse> next,
+            CancellationToken cancellationToken)
+        {
+            Console.WriteLine($"[Logging] → {typeof(TRequest).Name}");
+            var result = await next();
+            Console.WriteLine($"[Logging] ✓ {typeof(TRequest).Name}");
+            return result;
+        }
+    }
 ```
 
 # Notifications
@@ -156,15 +180,15 @@ Define your handlers
 
 Inject the **IRoutya** interface and dispatch your notifications sequentially...
 ```C#
-public class Example : ControllerBase
-{
-  private readonly IRoutya _dispatcher;
+    public class Example : ControllerBase
+    {
+      private readonly IRoutya _dispatcher;
 
-  public Example(IRoutya dispatcher)
-  {
-     _dispatcher = dispatcher
-  }
-}
+      public Example(IRoutya dispatcher)
+      {
+         _dispatcher = dispatcher
+      }
+    }
 ```
 
 ```C#

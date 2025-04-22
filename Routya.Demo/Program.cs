@@ -12,8 +12,8 @@ internal class Program
         var services = new ServiceCollection();
 
         services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Scoped, Assembly.GetExecutingAssembly());
-        services.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
-        services.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));   
+        services.AddScoped(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        services.AddScoped(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));   
 
         var provider = services.BuildServiceProvider();
         var dispatcher = provider.GetRequiredService<IRoutya>();

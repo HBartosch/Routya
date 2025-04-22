@@ -1,10 +1,11 @@
-﻿using System;
+﻿using Routya.Core.Extensions.Configurations;
+using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
 namespace Routya.Core.Extensions
 {
-    public static class ExpressionExtension
+    internal static class ExpressionExtension
     {
         public static Expression ForEach(
             Type elementType,
@@ -13,15 +14,15 @@ namespace Routya.Core.Extensions
             Expression loopContent)
         {
             var enumeratorType = typeof(IEnumerator<>).MakeGenericType(elementType);
-            var getEnumeratorCall = Expression.Call(collection, "GetEnumerator", Type.EmptyTypes);
-            var enumeratorVar = Expression.Variable(enumeratorType, "enumerator");
+            var getEnumeratorCall = Expression.Call(collection, ExtensionConstant.GetEnumeratorMethodName, Type.EmptyTypes);
+            var enumeratorVar = Expression.Variable(enumeratorType, ExtensionConstant.EnumeratorVariableName);
 
             var moveNextCall = Expression.Call(
                 enumeratorVar,
                 typeof(System.Collections.IEnumerator).GetMethod(nameof(System.Collections.IEnumerator.MoveNext))!
             );
 
-            var breakLabel = Expression.Label("LoopBreak");
+            var breakLabel = Expression.Label(ExtensionConstant.LoopBreakName);
 
             return Expression.Block(
                 new[] { enumeratorVar },
@@ -33,7 +34,7 @@ namespace Routya.Core.Extensions
                             Expression.Break(breakLabel),
                             Expression.Block(
                                 new[] { loopVar },
-                                Expression.Assign(loopVar, Expression.Property(enumeratorVar, "Current")),
+                                Expression.Assign(loopVar, Expression.Property(enumeratorVar, ExtensionConstant.PropertyVariableName)),
                                 loopContent
                             )
                         ),

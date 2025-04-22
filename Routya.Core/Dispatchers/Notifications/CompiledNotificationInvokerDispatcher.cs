@@ -81,10 +81,10 @@ namespace Routya.Core.Dispatchers.Notifications
                 serviceProviderParam
             );
 
-            var handlerVar = Expression.Variable(handlerInterface, "h");
-            var selectedHandler = Expression.Variable(handlerInterface, "matched");
+            var handlerVar = Expression.Variable(handlerInterface, CompiledConstant.HandlerParameterName);
+            var selectedHandler = Expression.Variable(handlerInterface, CompiledConstant.SelectedHandlerParameterName);
 
-            var breakLabel = Expression.Label("found");
+            var breakLabel = Expression.Label(CompiledConstant.LoopBreakName);
 
             var notificationCast = Expression.Convert(notificationParam, typeof(TNotification));
 
