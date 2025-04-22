@@ -25,7 +25,7 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 Latest prerelease version:
 ```bash
-dotnet add package Routya.Core --version 1.0.0-alpha.4
+dotnet add package Routya.Core --version 1.0.0
 ```
 ## 🚀 Quick Start
 
