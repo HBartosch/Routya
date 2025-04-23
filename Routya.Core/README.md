@@ -1,5 +1,6 @@
 # Routya
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/dotnet.yml?label=CI&style=flat-square)
+![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/build-and-test.yml?label=Tests&style=flat-square)
 [![NuGet](https://img.shields.io/nuget/v/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
 [![NuGet](https://img.shields.io/nuget/dt/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
 
