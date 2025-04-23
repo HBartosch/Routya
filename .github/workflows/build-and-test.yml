@@ -28,4 +28,4 @@ jobs:
       run: dotnet build Routya.Core/Routya.Core.csproj --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test Routya.Test/Routya.Test.csproj --no-build --configuration Release --verbosity normal
+      run: dotnet test --no-build --configuration Release --verbosity normal
