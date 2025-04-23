@@ -6,13 +6,14 @@
     <SignAssembly>False</SignAssembly>
     <Title>Routya</Title>
     <Authors>Henry Bartosch</Authors>
+	<PackageId>Routya.Core</PackageId>
     <RepositoryUrl>https://github.com/HBartosch/Routya</RepositoryUrl>
+	<PackageProjectUrl>https://github.com/HBartosch/Routya</PackageProjectUrl>
     <PackageTags>dispatcher, request, response, notification</PackageTags>
     <Description>request and notification dispatcher</Description>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
-	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-	  
+	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>  
   </PropertyGroup>
 
   <ItemGroup>

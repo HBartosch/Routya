@@ -6,8 +6,6 @@
 **Routya** is a fast, lightweight message dispatching library built for .NET applications that use the CQRS pattern.  
 It provides a flexible way to route requests/responses and notifications to their respective handlers with minimal overhead and high performance.
 
-> 🚧 Routya is currently in **alpha** — APIs may change as we refine the design and gather feedback.
-
 ---
 
 ## ✨ Features
