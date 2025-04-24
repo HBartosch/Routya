@@ -1,8 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
-    <Nullable>enable</Nullable>
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
     <SignAssembly>False</SignAssembly>
     <Title>Routya</Title>
     <Authors>Henry Bartosch</Authors>
@@ -13,7 +12,12 @@
     <Description>request and notification dispatcher</Description>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
-	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>  
+	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	<LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' != 'netstandard2.0'">
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
