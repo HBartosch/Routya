@@ -23,9 +23,9 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 ## 📦 NuGet Package
 
-Latest prerelease version:
+Latest version:
 ```bash
-dotnet add package Routya.Core --version 1.0.2
+dotnet add package Routya.Core --version 1.0.4
 ```
 ## 🚀 Quick Start
 
@@ -67,10 +67,10 @@ Note!!! By default you would have to manually register your Requests/Notificatio
 
 ### 📊 Benchmark Results
 Note! Benchmarks were run with handlers returning only a string using BenchmarkDotNet
-| Method           | Mean      | Error    | StdDev   | Code Size | Allocated |
-|----------------- |----------:|---------:|---------:|----------:|----------:|
-| Routya_Send      |  76.59 us | 1.491 us | 1.831 us |   8,684 B |   6.31 KB |
-| Routya_SendAsync | 246.53 us | 1.848 us | 1.638 us |   8,813 B |   8.94 KB |
+| Method            | Mean     | Error   | StdDev  | Code Size | Gen0   | Allocated |
+|------------------ |---------:|--------:|--------:|----------:|-------:|----------:|
+| Routya_Send       | 296.6 ns | 3.15 ns | 2.94 ns |   8,676 B | 0.0029 |     704 B |
+| Routya_SendAsync  | 346.1 ns | 5.49 ns | 5.13 ns |   8,801 B | 0.0029 |     784 B |
 
 Define a request
 ```C#
