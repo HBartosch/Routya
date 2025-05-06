@@ -32,14 +32,14 @@ namespace Routya.Core.Dispatchers.Notifications
             CancellationToken cancellationToken = default)
             where TNotification : INotification
         {
+            var provider = _options.Scope == RoutyaDispatchScope.Scoped
+              ? _provider.CreateScope().ServiceProvider
+              : _provider;
+
             var notificationType = typeof(TNotification);
             var cache = strategy == NotificationDispatchStrategy.Sequential ? _sequentialCache : _parallelCache;
-            var invokers = cache.GetOrAdd(notificationType, BuildInvokerArray<TNotification>);
-
-            var provider = _options.Scope == RoutyaDispatchScope.Scoped
-               ? _provider.CreateScope().ServiceProvider
-               : _provider;
-
+            var invokers = cache.GetOrAdd(notificationType, BuildInvokerArray<TNotification>(provider));
+           
             if (strategy == NotificationDispatchStrategy.Sequential)
             {
                 return InvokeSequential(invokers, provider, notification!, cancellationToken);
@@ -48,10 +48,10 @@ namespace Routya.Core.Dispatchers.Notifications
             return InvokeParallel(invokers, provider, notification!, cancellationToken);
         }
 
-        private NotificationHandlerInvoker[] BuildInvokerArray<TNotification>(Type _) where TNotification : INotification
+        private NotificationHandlerInvoker[] BuildInvokerArray<TNotification>(IServiceProvider provider) where TNotification : INotification
         {
             var handlerInterface = typeof(INotificationHandler<TNotification>);
-            var handlers = _provider.GetServices(handlerInterface).ToArray();
+            var handlers = provider.GetServices(handlerInterface).ToArray();
 
             var invokers = new List<NotificationHandlerInvoker>();
 

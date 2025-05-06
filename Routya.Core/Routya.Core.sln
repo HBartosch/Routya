@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Routya.Test", "..\Routya.Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Routya.Demo.NetFramework", "..\Routya.Demo.NetFramework\Routya.Demo.NetFramework.csproj", "{AC57B502-236D-4142-A78A-826036116B9C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Routya.Events", "..\Routya.Events\Routya.Events.csproj", "{D39FA696-8E91-452D-B8D2-DA3EE68B6E29}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +53,10 @@ Global
 		{AC57B502-236D-4142-A78A-826036116B9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AC57B502-236D-4142-A78A-826036116B9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AC57B502-236D-4142-A78A-826036116B9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D39FA696-8E91-452D-B8D2-DA3EE68B6E29}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D39FA696-8E91-452D-B8D2-DA3EE68B6E29}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D39FA696-8E91-452D-B8D2-DA3EE68B6E29}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D39FA696-8E91-452D-B8D2-DA3EE68B6E29}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

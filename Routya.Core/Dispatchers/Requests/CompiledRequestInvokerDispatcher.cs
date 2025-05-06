@@ -42,6 +42,6 @@ namespace Routya.Core.Dispatchers.Requests
                : _provider;
 
             return await pipeline(provider, request, cancellationToken);
-        }       
+        }
     }
 }

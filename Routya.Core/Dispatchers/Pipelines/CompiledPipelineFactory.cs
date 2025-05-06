@@ -11,79 +11,73 @@ namespace Routya.Core.Dispatchers.Pipelines
 {
     internal static class CompiledPipelineFactory
     {
-        private static readonly ConcurrentDictionary<Type, Delegate> _cache = new ConcurrentDictionary<Type, Delegate>();
+        private static readonly ConcurrentDictionary<Type, Delegate> _asyncCache = new ConcurrentDictionary<Type, Delegate>();
+        private static readonly ConcurrentDictionary<Type, Delegate> _syncCache = new ConcurrentDictionary<Type, Delegate>();
 
         public static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> GetOrAdd<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
-            var key = typeof(TRequest);
-
-            return (Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>>)_cache.GetOrAdd(key, _ =>
-            {
-                return BuildPipeline<TRequest, TResponse>();
-            });
+            return (Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>>)_asyncCache.GetOrAdd(typeof(TRequest), _ =>
+                BuildPrecompiledAsyncPipeline<TRequest, TResponse>());
         }
 
-        private static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> BuildPipeline<TRequest, TResponse>()
+        private static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> BuildPrecompiledAsyncPipeline<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
             return (provider, request, cancellationToken) =>
             {
-                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
+                // Resolve once
+                var handler = provider.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>().ToArray();
 
-                var coreHandler = CompiledRequestInvokerFactory.CreateAsync<TRequest, TResponse>();
-
-                if (behaviors.Count() == 0)
-                    return coreHandler(provider, request, cancellationToken);
-
-                RequestHandlerDelegate<TResponse> handler = () => coreHandler(provider, request, cancellationToken);
-
-                foreach (var behavior in behaviors.AsEnumerable().Reverse())
+                // Build the full chain once using captured handler and behaviors
+                RequestHandlerDelegate<TResponse> finalHandler = () =>
                 {
-                    var next = handler;
-                    var b = behavior;
-                    handler = () => b.Handle(request, next, cancellationToken);
+                    if (handler is IAsyncRequestHandler<TRequest, TResponse> asyncHandler)
+                        return asyncHandler.HandleAsync(request, cancellationToken);
+
+                    return Task.FromResult(handler.Handle(request));
+                };
+
+                for (int i = behaviors.Length - 1; i >= 0; i--)
+                {
+                    var b = behaviors[i];
+                    var next = finalHandler;
+                    finalHandler = () => b.Handle(request, next, cancellationToken);
                 }
 
-                return handler();
+                return finalHandler();
             };
         }
-
-        private static readonly ConcurrentDictionary<Type, Delegate> _syncCache = new ConcurrentDictionary<Type, Delegate>();
 
         public static Func<IServiceProvider, TRequest, TResponse> GetOrAddSync<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
-            var key = typeof(TRequest);
-
-            return (Func<IServiceProvider, TRequest, TResponse>)_syncCache.GetOrAdd(key, _ =>
-            {
-                return BuildSyncPipeline<TRequest, TResponse>();
-            });
+            return (Func<IServiceProvider, TRequest, TResponse>)_syncCache.GetOrAdd(typeof(TRequest), _ =>
+                BuildPrecompiledSyncPipeline<TRequest, TResponse>());
         }
 
-        private static Func<IServiceProvider, TRequest, TResponse> BuildSyncPipeline<TRequest, TResponse>()
+        private static Func<IServiceProvider, TRequest, TResponse> BuildPrecompiledSyncPipeline<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
             return (provider, request) =>
             {
-                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
-                var coreHandler = CompiledRequestInvokerFactory.CreateSync<TRequest, TResponse>();
+                var handler = provider.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>().ToArray();
 
-                if (behaviors.Count() == 0)
-                    return coreHandler(provider, request);
+                RequestHandlerDelegate<TResponse> finalHandler = () =>
+                    Task.FromResult(handler.Handle(request));
 
-                RequestHandlerDelegate<TResponse> handler = () => Task.FromResult(coreHandler(provider, request));
-
-                foreach (var behavior in behaviors.AsEnumerable().Reverse())
+                for (int i = behaviors.Length - 1; i >= 0; i--)
                 {
-                    var next = handler;
-                    var b = behavior;
-                    handler = () => b.Handle(request, next, CancellationToken.None);
+                    var b = behaviors[i];
+                    var next = finalHandler;
+                    finalHandler = () => b.Handle(request, next, CancellationToken.None);
                 }
 
-                return handler().GetAwaiter().GetResult();
+                return finalHandler().GetAwaiter().GetResult();
             };
         }
     }
+
 }

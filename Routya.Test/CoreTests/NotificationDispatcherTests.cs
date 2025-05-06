@@ -2,7 +2,7 @@
 using Routya.Core.Abstractions;
 using Routya.Core.Dispatchers.Notifications;
 
-namespace Routya.Test;
+namespace Routya.Test.CoreTests;
 public class NotificationDispatcherTests
 {
     private readonly IServiceProvider _provider;

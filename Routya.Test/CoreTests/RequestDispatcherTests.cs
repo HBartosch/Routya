@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
 using Routya.Core.Dispatchers.Requests;
 
-namespace Routya.Test;
+namespace Routya.Test.CoreTests;
 
 public class RequestDispatcherTests
 {

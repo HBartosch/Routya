@@ -2,6 +2,7 @@
 using Routya.Core.Abstractions;
 using Routya.Core.Dispatchers.Configurations;
 using System;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,82 +11,71 @@ namespace Routya.Core.Dispatchers.Requests
 {
     internal static class CompiledRequestInvokerFactory
     {
+        private static readonly ConcurrentDictionary<Type, Delegate> _syncCache = new ConcurrentDictionary<Type, Delegate>();
+        private static readonly ConcurrentDictionary<Type, Delegate> _asyncCache = new ConcurrentDictionary<Type, Delegate>();
+
         public static Func<IServiceProvider, TRequest, TResponse> CreateSync<TRequest, TResponse>()
-            where TRequest : IRequest<TResponse>
+           where TRequest : IRequest<TResponse>
         {
-            var spParam = Expression.Parameter(typeof(IServiceProvider), CompiledConstant.ServiceProviderParameterName);
-            var requestParam = Expression.Parameter(typeof(TRequest), CompiledConstant.RequestParameterName);
+            var key = typeof(TRequest);
 
-            var handlerType = typeof(IRequestHandler<TRequest, TResponse>);
-            var getHandler = Expression.Call(
-                typeof(ServiceProviderServiceExtensions),
-                nameof(ServiceProviderServiceExtensions.GetRequiredService),
-                new[] { handlerType },
-                spParam
-            );
+            var invoker = (Func<IRequestHandler<TRequest, TResponse>, TRequest, TResponse>)_syncCache.GetOrAdd(key, _ =>
+            {
+                var handlerParam = Expression.Parameter(typeof(IRequestHandler<TRequest, TResponse>), CompiledConstant.HandlerParameterName);
+                var requestParam = Expression.Parameter(typeof(TRequest), CompiledConstant.RequestParameterName);
 
-            var callHandle = Expression.Call(
-                Expression.Convert(getHandler, handlerType),
-                handlerType.GetMethod(nameof(IRequestHandler<TRequest, TResponse>.Handle))!,
-                requestParam
-            );
+                var call = Expression.Call(
+                    handlerParam,
+                    typeof(IRequestHandler<TRequest, TResponse>).GetMethod(nameof(IRequestHandler<TRequest, TResponse>.Handle))!,
+                    requestParam
+                );
 
-            var lambda = Expression.Lambda<Func<IServiceProvider, TRequest, TResponse>>(callHandle, spParam, requestParam);
-            return lambda.Compile();
+                return Expression
+                    .Lambda<Func<IRequestHandler<TRequest, TResponse>, TRequest, TResponse>>(call, handlerParam, requestParam)
+                    .Compile();
+            });
+
+            return (sp, req) =>
+            {
+                var handler = sp.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                return invoker(handler, req);
+            };
         }
 
         public static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> CreateAsync<TRequest, TResponse>()
-            where TRequest : IRequest<TResponse>
+           where TRequest : IRequest<TResponse>
         {
-            var spParam = Expression.Parameter(typeof(IServiceProvider), CompiledConstant.ServiceProviderParameterName);
-            var requestParam = Expression.Parameter(typeof(TRequest), CompiledConstant.RequestParameterName);
-            var tokenParam = Expression.Parameter(typeof(CancellationToken), CompiledConstant.CancellationTokenParameterName);
+            var key = typeof(TRequest);
 
-            var asyncHandlerType = typeof(IAsyncRequestHandler<TRequest, TResponse>);
-            var syncHandlerType = typeof(IRequestHandler<TRequest, TResponse>);
+            var asyncInvoker = (Func<IAsyncRequestHandler<TRequest, TResponse>, TRequest, CancellationToken, Task<TResponse>>)_asyncCache.GetOrAdd(key, _ =>
+            {
+                var handlerParam = Expression.Parameter(typeof(IAsyncRequestHandler<TRequest, TResponse>), CompiledConstant.HandlerParameterName);
+                var requestParam = Expression.Parameter(typeof(TRequest), CompiledConstant.RequestParameterName);
+                var tokenParam = Expression.Parameter(typeof(CancellationToken), CompiledConstant.CancellationTokenParameterName);
 
-            var getAsync = Expression.Call(
-                typeof(ServiceProviderServiceExtensions),
-                nameof(ServiceProviderServiceExtensions.GetService),
-                new[] { asyncHandlerType },
-                spParam
-            );
+                var call = Expression.Call(
+                    handlerParam,
+                    typeof(IAsyncRequestHandler<TRequest, TResponse>).GetMethod(nameof(IAsyncRequestHandler<TRequest, TResponse>.HandleAsync))!,
+                    requestParam,
+                    tokenParam
+                );
 
-            var callAsync = Expression.Call(
-                Expression.Convert(getAsync, asyncHandlerType),
-                asyncHandlerType.GetMethod(nameof(IAsyncRequestHandler<TRequest, TResponse>.HandleAsync))!,
-                requestParam,
-                tokenParam
-            );
+                return Expression
+                    .Lambda<Func<IAsyncRequestHandler<TRequest, TResponse>, TRequest, CancellationToken, Task<TResponse>>>(
+                        call, handlerParam, requestParam, tokenParam
+                    ).Compile();
+            });
 
-            var getSync = Expression.Call(
-                typeof(ServiceProviderServiceExtensions),
-                nameof(ServiceProviderServiceExtensions.GetRequiredService),
-                new[] { syncHandlerType },
-                spParam
-            );
+            var syncInvoker = CreateSync<TRequest, TResponse>();
 
-            var callSync = Expression.Call(
-                Expression.Convert(getSync, syncHandlerType),
-                syncHandlerType.GetMethod(nameof(IRequestHandler<TRequest, TResponse>.Handle))!,
-                requestParam
-            );
+            return (sp, req, token) =>
+            {
+                var asyncHandler = sp.GetService<IAsyncRequestHandler<TRequest, TResponse>>();
+                if (asyncHandler != null)
+                    return asyncInvoker(asyncHandler, req, token);
 
-            var wrapInTask = Expression.Call(
-                typeof(Task).GetMethod(nameof(Task.FromResult))!.MakeGenericMethod(typeof(TResponse)),
-                callSync
-            );
-
-            var condition = Expression.Condition(
-                Expression.NotEqual(getAsync, Expression.Constant(null, asyncHandlerType)),
-                callAsync,
-                wrapInTask
-            );
-
-            return Expression
-                .Lambda<Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>>>(
-                    condition, spParam, requestParam, tokenParam)
-                .Compile();
+                return Task.FromResult(syncInvoker(sp, req));
+            };
         }
     }
 }
