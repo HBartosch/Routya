@@ -24,29 +24,67 @@ namespace Routya.Core.Dispatchers.Pipelines
         private static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> BuildPrecompiledAsyncPipeline<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
+            // Pre-compile type information (happens once per request type)
+            Type asyncHandlerType = typeof(IAsyncRequestHandler<TRequest, TResponse>);
+            Type syncHandlerType = typeof(IRequestHandler<TRequest, TResponse>);
+            Type behaviorType = typeof(IPipelineBehavior<TRequest, TResponse>);
+            
             return (provider, request, cancellationToken) =>
             {
-                // Resolve once
-                var handler = provider.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
-                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>().ToArray();
-
-                // Build the full chain once using captured handler and behaviors
-                RequestHandlerDelegate<TResponse> finalHandler = () =>
+                // Fast path: Try async handler first (most common case)
+                var asyncHandler = provider.GetService(asyncHandlerType) as IAsyncRequestHandler<TRequest, TResponse>;
+                
+                if (asyncHandler != null)
                 {
-                    if (handler is IAsyncRequestHandler<TRequest, TResponse> asyncHandler)
+                    // No behaviors check - avoid GetServices call if possible
+                    var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
+                    
+                    // Check if behaviors exist without allocating array
+                    var behaviorEnumerator = behaviors.GetEnumerator();
+                    if (!behaviorEnumerator.MoveNext())
+                    {
+                        // Fast path: No behaviors, direct handler invocation
                         return asyncHandler.HandleAsync(request, cancellationToken);
-
-                    return Task.FromResult(handler.Handle(request));
-                };
-
-                for (int i = behaviors.Length - 1; i >= 0; i--)
-                {
-                    var b = behaviors[i];
-                    var next = finalHandler;
-                    finalHandler = () => b.Handle(request, next, cancellationToken);
+                    }
+                    
+                    // Build pipeline with behaviors
+                    var behaviorArray = behaviors.ToArray();
+                    RequestHandlerDelegate<TResponse> finalHandler = () => asyncHandler.HandleAsync(request, cancellationToken);
+                    
+                    for (int i = behaviorArray.Length - 1; i >= 0; i--)
+                    {
+                        var behavior = behaviorArray[i];
+                        var next = finalHandler;
+                        finalHandler = () => behavior.Handle(request, next, cancellationToken);
+                    }
+                    
+                    return finalHandler();
                 }
-
-                return finalHandler();
+                
+                // Fallback to sync handler
+                var syncHandler = provider.GetRequiredService(syncHandlerType) as IRequestHandler<TRequest, TResponse>;
+                
+                var syncBehaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
+                var syncBehaviorEnumerator = syncBehaviors.GetEnumerator();
+                
+                if (!syncBehaviorEnumerator.MoveNext())
+                {
+                    // Fast path: No behaviors, direct handler invocation
+                    return Task.FromResult(syncHandler!.Handle(request));
+                }
+                
+                // Build pipeline with behaviors
+                var syncBehaviorArray = syncBehaviors.ToArray();
+                RequestHandlerDelegate<TResponse> syncFinalHandler = () => Task.FromResult(syncHandler!.Handle(request));
+                
+                for (int i = syncBehaviorArray.Length - 1; i >= 0; i--)
+                {
+                    var behavior = syncBehaviorArray[i];
+                    var next = syncFinalHandler;
+                    syncFinalHandler = () => behavior.Handle(request, next, cancellationToken);
+                }
+                
+                return syncFinalHandler();
             };
         }
 
@@ -60,19 +98,31 @@ namespace Routya.Core.Dispatchers.Pipelines
         private static Func<IServiceProvider, TRequest, TResponse> BuildPrecompiledSyncPipeline<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
+            // Pre-compile type information (happens once per request type)
+            Type handlerType = typeof(IRequestHandler<TRequest, TResponse>);
+            
             return (provider, request) =>
             {
-                var handler = provider.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
-                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>().ToArray();
-
-                RequestHandlerDelegate<TResponse> finalHandler = () =>
-                    Task.FromResult(handler.Handle(request));
-
-                for (int i = behaviors.Length - 1; i >= 0; i--)
+                var handler = provider.GetRequiredService(handlerType) as IRequestHandler<TRequest, TResponse>;
+                var behaviors = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
+                
+                // Fast path: Check if behaviors exist without allocating array
+                var behaviorEnumerator = behaviors.GetEnumerator();
+                if (!behaviorEnumerator.MoveNext())
                 {
-                    var b = behaviors[i];
+                    // Fast path: No behaviors, direct handler invocation
+                    return handler!.Handle(request);
+                }
+                
+                // Build pipeline with behaviors
+                var behaviorArray = behaviors.ToArray();
+                RequestHandlerDelegate<TResponse> finalHandler = () => Task.FromResult(handler!.Handle(request));
+
+                for (int i = behaviorArray.Length - 1; i >= 0; i--)
+                {
+                    var behavior = behaviorArray[i];
                     var next = finalHandler;
-                    finalHandler = () => b.Handle(request, next, CancellationToken.None);
+                    finalHandler = () => behavior.Handle(request, next, CancellationToken.None);
                 }
 
                 return finalHandler().GetAwaiter().GetResult();

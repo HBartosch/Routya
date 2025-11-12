@@ -25,11 +25,13 @@ namespace Routya.Core.Dispatchers.Requests
         {
             var pipeline = CompiledPipelineFactory.GetOrAddSync<TRequest, TResponse>();
 
-            var provider = _options.Scope == RoutyaDispatchScope.Scoped
-               ? _provider.CreateScope().ServiceProvider
-               : _provider;
+            if (_options.Scope == RoutyaDispatchScope.Scoped)
+            {
+                using var scope = _provider.CreateScope();
+                return pipeline(scope.ServiceProvider, request);
+            }
 
-            return pipeline(provider, request);
+            return pipeline(_provider, request);
         }
 
         public async Task<TResponse> SendAsync<TRequest, TResponse>(TRequest request, CancellationToken cancellationToken = default)
@@ -37,11 +39,13 @@ namespace Routya.Core.Dispatchers.Requests
         {
             var pipeline = CompiledPipelineFactory.GetOrAdd<TRequest, TResponse>();
 
-            var provider = _options.Scope == RoutyaDispatchScope.Scoped
-               ? _provider.CreateScope().ServiceProvider
-               : _provider;
+            if (_options.Scope == RoutyaDispatchScope.Scoped)
+            {
+                using var scope = _provider.CreateScope();
+                return await pipeline(scope.ServiceProvider, request, cancellationToken);
+            }
 
-            return await pipeline(provider, request, cancellationToken);
+            return await pipeline(_provider, request, cancellationToken);
         }
     }
 }

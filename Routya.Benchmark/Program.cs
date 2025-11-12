@@ -22,51 +22,123 @@ public class DispatcherBenchmarks
 {
     private HelloRequest _request;
     public static readonly List<string> Logs = [];
-    private IServiceProvider _provider;
+    private IServiceProvider _providerSingleton;
+    private IServiceProvider _providerScoped;
+    private IServiceProvider _providerTransient;
 
     [GlobalSetup]
     public void Setup()
     {
         Logs.Clear();
 
-        var services = new ServiceCollection();
-
-        services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Scoped, Assembly.GetExecutingAssembly());
-        services.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
-        services.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-        services.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRLoggingBehavior<,>));
-        services.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRValidationBehavior<,>));
-        services.AddMediatR(cfg =>
+        // Setup for Singleton handlers
+        var servicesSingleton = new ServiceCollection();
+        servicesSingleton.AddRoutya(cfg => 
+        {
+            cfg.Scope = RoutyaDispatchScope.Scoped;
+            cfg.HandlerLifetime = ServiceLifetime.Singleton;
+        }, Assembly.GetExecutingAssembly());
+        servicesSingleton.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        servicesSingleton.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        servicesSingleton.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRLoggingBehavior<,>));
+        servicesSingleton.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRValidationBehavior<,>));
+        servicesSingleton.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
         });
+        _providerSingleton = servicesSingleton.BuildServiceProvider();
 
-        _provider = services.BuildServiceProvider();
+        // Setup for Scoped handlers
+        var servicesScoped = new ServiceCollection();
+        servicesScoped.AddRoutya(cfg => 
+        {
+            cfg.Scope = RoutyaDispatchScope.Scoped;
+            cfg.HandlerLifetime = ServiceLifetime.Scoped;
+        }, Assembly.GetExecutingAssembly());
+        servicesScoped.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        servicesScoped.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        servicesScoped.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRLoggingBehavior<,>));
+        servicesScoped.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRValidationBehavior<,>));
+        servicesScoped.AddMediatR(cfg =>
+        {
+            cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
+        });
+        _providerScoped = servicesScoped.BuildServiceProvider();
+
+        // Setup for Transient handlers
+        var servicesTransient = new ServiceCollection();
+        servicesTransient.AddRoutya(cfg => 
+        {
+            cfg.Scope = RoutyaDispatchScope.Scoped;
+            cfg.HandlerLifetime = ServiceLifetime.Transient;
+        }, Assembly.GetExecutingAssembly());
+        servicesTransient.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        servicesTransient.AddSingleton(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        servicesTransient.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRLoggingBehavior<,>));
+        servicesTransient.AddSingleton(typeof(MediatR.IPipelineBehavior<,>), typeof(MediatRValidationBehavior<,>));
+        servicesTransient.AddMediatR(cfg =>
+        {
+            cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
+        });
+        _providerTransient = servicesTransient.BuildServiceProvider();
+
         _request = new HelloRequest("Benchmark");
     }
 
-    [Benchmark]
-    public string Routya_Send()
+    [Benchmark(Baseline = true)]
+    public Task<string> MediatR_SendAsync()
     {
-        using var scope = _provider.CreateScope();
+        using var scope = _providerSingleton.CreateScope();
+        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+        return mediator.Send(_request);
+    }
+
+    [Benchmark]
+    public string Routya_Singleton_Send()
+    {
+        using var scope = _providerSingleton.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
         return dispatcher.Send<HelloRequest, string>(_request);
     }
 
     [Benchmark]
-    public Task<string> Routya_SendAsync()
+    public Task<string> Routya_Singleton_SendAsync()
     {
-        using var scope = _provider.CreateScope();
+        using var scope = _providerSingleton.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
         return dispatcher.SendAsync<HelloRequest, string>(_request);
     }
 
     [Benchmark]
-    public Task<string> MediatR_SendAsync()
+    public string Routya_Scoped_Send()
     {
-        using var scope = _provider.CreateScope();
-        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
-        return mediator.Send(_request);
+        using var scope = _providerScoped.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
+        return dispatcher.Send<HelloRequest, string>(_request);
+    }
+
+    [Benchmark]
+    public Task<string> Routya_Scoped_SendAsync()
+    {
+        using var scope = _providerScoped.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
+        return dispatcher.SendAsync<HelloRequest, string>(_request);
+    }
+
+    [Benchmark]
+    public string Routya_Transient_Send()
+    {
+        using var scope = _providerTransient.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
+        return dispatcher.Send<HelloRequest, string>(_request);
+    }
+
+    [Benchmark]
+    public Task<string> Routya_Transient_SendAsync()
+    {
+        using var scope = _providerTransient.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
+        return dispatcher.SendAsync<HelloRequest, string>(_request);
     }
 }
 

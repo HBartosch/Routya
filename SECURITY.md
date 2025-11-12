@@ -10,7 +10,7 @@ We aim to support the latest published version of each Routya package. Older ver
 
 | Package            | Supported Versions |
 |--------------------|--------------------|
-| Routya.Core   | ✅ Latest (1.0.4) |
+| Routya.Core   | ✅ Latest (1.0.5) |
 
 ---
 

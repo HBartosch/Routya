@@ -13,34 +13,74 @@ namespace Routya.Notification.Benchmark;
 [DisassemblyDiagnoser]
 public class BenchmarkNotificationDispatch
 {
-    private IRoutya _routyaCompiled = default!;
+    private IRoutya _routyaSingleton = default!;
+    private IRoutya _routyaScoped = default!;
+    private IRoutya _routyaTransient = default!;
     private IMediator _mediator = default!;
     private TestNotification _notification = default!;
 
     [GlobalSetup]
     public void Setup()
     {
-        var services = new ServiceCollection();
+        // Setup for Singleton handlers
+        var servicesSingleton = new ServiceCollection();
+        servicesSingleton.AddRoutya(cfg => 
+        {
+            cfg.Scope = RoutyaDispatchScope.Root;
+            cfg.HandlerLifetime = ServiceLifetime.Singleton;
+        }, Assembly.GetExecutingAssembly());
+        var providerSingleton = servicesSingleton.BuildServiceProvider();
+        _routyaSingleton = providerSingleton.GetRequiredService<IRoutya>();
 
-        services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Root, Assembly.GetExecutingAssembly());
+        // Setup for Scoped handlers
+        var servicesScoped = new ServiceCollection();
+        servicesScoped.AddRoutya(cfg => 
+        {
+            cfg.Scope = RoutyaDispatchScope.Root;
+            cfg.HandlerLifetime = ServiceLifetime.Scoped;
+        }, Assembly.GetExecutingAssembly());
+        var providerScoped = servicesScoped.BuildServiceProvider();
+        _routyaScoped = providerScoped.GetRequiredService<IRoutya>();
 
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
+        // Setup for Transient handlers
+        var servicesTransient = new ServiceCollection();
+        servicesTransient.AddRoutya(cfg => 
+        {
+            cfg.Scope = RoutyaDispatchScope.Root;
+            cfg.HandlerLifetime = ServiceLifetime.Transient;
+        }, Assembly.GetExecutingAssembly());
+        var providerTransient = servicesTransient.BuildServiceProvider();
+        _routyaTransient = providerTransient.GetRequiredService<IRoutya>();
 
-        var provider = services.BuildServiceProvider();
+        // Setup MediatR
+        var servicesMediatR = new ServiceCollection();
+        servicesMediatR.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
+        var providerMediatR = servicesMediatR.BuildServiceProvider();
+        _mediator = providerMediatR.GetRequiredService<IMediator>();
 
-        _routyaCompiled = provider.GetRequiredService<IRoutya>();
-        _mediator = provider.GetRequiredService<IMediator>();
         _notification = new TestNotification("bench@test.com");
     }
 
-    [Benchmark]
+    [Benchmark(Baseline = true)]
     public async Task MediatR_Publish() => await _mediator.Publish(_notification);
 
     [Benchmark]
-    public async Task RoutyaCompiled_Sequential() => await _routyaCompiled.PublishAsync(_notification);
+    public async Task Routya_Singleton_Sequential() => await _routyaSingleton.PublishAsync(_notification);
 
     [Benchmark]
-    public async Task RoutyaCompiled_Parallel() => await _routyaCompiled.PublishParallelAsync(_notification);
+    public async Task Routya_Singleton_Parallel() => await _routyaSingleton.PublishParallelAsync(_notification);
+
+    [Benchmark]
+    public async Task Routya_Scoped_Sequential() => await _routyaScoped.PublishAsync(_notification);
+
+    [Benchmark]
+    public async Task Routya_Scoped_Parallel() => await _routyaScoped.PublishParallelAsync(_notification);
+
+    [Benchmark]
+    public async Task Routya_Transient_Sequential() => await _routyaTransient.PublishAsync(_notification);
+
+    [Benchmark]
+    public async Task Routya_Transient_Parallel() => await _routyaTransient.PublishParallelAsync(_notification);
 }
 
 public class TestNotification(string email) : Routya.Core.Abstractions.INotification, MediatR.INotification

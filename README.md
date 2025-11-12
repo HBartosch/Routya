@@ -13,9 +13,12 @@ It provides a flexible way to route requests/responses and notifications to thei
 ## ✨ Features
 
 - ✅ Clean interface-based abstraction for Requests/Responses and Notifications
-- 🚀 High-performance dispatching via compiled delegates (no reflection or dynamic resolution)
+- 🚀 **High-performance dispatching** - Competitive with MediatR while offering more flexibility
+- ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
 - 🧩 Optional pipeline behavior support for cross-cutting concerns
 - 🔄 Supports both **sequential** and **parallel** notification dispatching
+- 🎯 **Multi-framework support** - netstandard2.0, netstandard2.1, .NET 8, .NET 9, .NET 10
+- 💾 **Memory efficient** - Zero memory leaks with proper scope management
 - ♻️ Simple to extend and integrate with your existing architecture
 - 🧪 Built with performance and clarity in mind
 
@@ -25,7 +28,7 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 Latest version:
 ```bash
-dotnet add package Routya.Core --version 1.0.4
+dotnet add package Routya.Core --version 1.0.5
 ```
 ## 🚀 Quick Start
 
@@ -55,7 +58,7 @@ Fastest option
     builder.Services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Root, Assembly.GetExecutingAssembly());
 ```
 
-You can add an auto registration of IRequestHandler, IAsyncRequestHandler and INotificationHandler by adding the executing assembly. This however registers all your request handlers as scoped.
+You can add an auto registration of IRequestHandler, IAsyncRequestHandler and INotificationHandler by adding the executing assembly. This however registers all your request handlers with the default lifetime (Scoped).
 
 Note!!! By default you would have to manually register your Requests/Notifications and Handlers
 
@@ -63,14 +66,85 @@ Note!!! By default you would have to manually register your Requests/Notificatio
     builder.Services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Scoped, Assembly.GetExecutingAssembly());
 ```
 
+# Handler Lifetimes (New in v1.0.5)
+
+Configure handler lifetimes for optimal performance based on your use case:
+
+### Option 1: Assembly Scanning with Uniform Lifetime
+```C#
+// Register all handlers as Singleton (fastest, stateless handlers only)
+builder.Services.AddRoutya(cfg => cfg.HandlerLifetime = ServiceLifetime.Singleton, Assembly.GetExecutingAssembly());
+
+// Register all handlers as Scoped (default, works with DbContext)
+builder.Services.AddRoutya(cfg => cfg.HandlerLifetime = ServiceLifetime.Scoped, Assembly.GetExecutingAssembly());
+
+// Register all handlers as Transient (new instance every time)
+builder.Services.AddRoutya(cfg => cfg.HandlerLifetime = ServiceLifetime.Transient, Assembly.GetExecutingAssembly());
+```
+
+### Option 2: Manual Registration (No Assembly Scanning)
+Register Routya core services without automatic handler registration:
+
+```C#
+// Register Routya core services only (no assembly scanning)
+builder.Services.AddRoutya();
+
+// Then manually register your handlers as needed
+builder.Services.AddScoped<IAsyncRequestHandler<CreateProductRequest, Product>, CreateProductHandler>();
+builder.Services.AddScoped<INotificationHandler<UserRegisteredNotification>, SendEmailHandler>();
+```
+
+### Option 3: Mixed Lifetimes (Recommended for Production)
+Register handlers individually with different lifetimes based on their requirements:
+
+```C#
+// Register Routya core services (no assembly scanning)
+builder.Services.AddRoutya();
+
+// Singleton - fastest, shared instance (stateless handlers)
+builder.Services.AddSingleton<IAsyncRequestHandler<CreateProductRequest, Product>, CreateProductHandler>();
+
+// Scoped - one per HTTP request (handlers using DbContext, HttpContext)
+builder.Services.AddScoped<IAsyncRequestHandler<GetProductRequest, Product?>, GetProductHandler>();
+
+// Transient - new instance every time (maximum isolation)
+builder.Services.AddTransient<IAsyncRequestHandler<GetAllProductsRequest, List<Product>>, GetAllProductsHandler>();
+```
+
+**Performance Comparison:**
+- **Singleton**: ~357 ns (competitive with MediatR, best for stateless handlers)
+- **Transient**: ~356 ns (matches MediatR performance, maximum isolation)  
+- **Scoped**: ~433 ns (22% overhead, safe for DbContext and scoped dependencies)
+
 # Requests
 
-### 📊 Benchmark Results
-Note! Benchmarks were run with handlers returning only a string using BenchmarkDotNet
-| Method            | Mean     | Error   | StdDev  | Code Size | Gen0   | Allocated |
-|------------------ |---------:|--------:|--------:|----------:|-------:|----------:|
-| Routya_Send       | 296.6 ns | 3.15 ns | 2.94 ns |   8,676 B | 0.0029 |     704 B |
-| Routya_SendAsync  | 346.1 ns | 5.49 ns | 5.13 ns |   8,801 B | 0.0029 |     784 B |
+### 📊 Benchmark Results (.NET 8 - November 2025)
+Benchmarks comparing Routya against MediatR 13.1.0 with simple request handlers (BenchmarkDotNet v0.14.0)
+
+**Test Environment:**
+- CPU: 11th Gen Intel Core i7-11800H @ 2.30GHz (8 cores, 16 logical processors)
+- RAM: System with AVX-512F support
+- OS: Windows 11 (10.0.22623)
+- .NET: 8.0.17 (8.0.1725.26602), X64 RyuJIT
+- GC: Concurrent Server
+
+#### Request Dispatching Performance
+| Method                     | Mean     | Ratio | Gen0   | Allocated | Notes |
+|--------------------------- |---------:|------:|-------:|----------:|-------|
+| MediatR_SendAsync          | 354.1 ns |  1.00 | 0.0038 |    1016 B | Baseline |
+| **Routya_Singleton_Send**      | **357.5 ns** |  **1.01** | 0.0033 |     920 B | ⚡ Competitive with MediatR |
+| **Routya_Transient_Send**      | **356.3 ns** |  **1.01** | 0.0038 |     944 B | ⚡ Equal to MediatR |
+| **Routya_Singleton_SendAsync** | **402.8 ns** |  **1.14** | 0.0043 |    1080 B | 14% overhead for async |
+| **Routya_Transient_SendAsync** | **396.6 ns** |  **1.12** | 0.0043 |    1104 B | 12% overhead for async |
+| **Routya_Scoped_Send**         | **433.6 ns** |  **1.22** | 0.0043 |    1128 B | Scoped DI overhead |
+| **Routya_Scoped_SendAsync**    | **455.8 ns** |  **1.29** | 0.0048 |    1288 B | Scoped + async overhead |
+
+**Key Highlights:**
+- ✅ **Singleton/Transient handlers** match MediatR performance (~1% difference)
+- ✅ **9-10% less memory allocation** for Singleton/Transient handlers
+- ✅ **Zero memory leaks** with proper scope disposal
+- ✅ **Fast-path optimization** when no behaviors configured
+- 🎯 **Configurable handler lifetimes** (Singleton/Scoped/Transient)
 
 Define a request
 ```C#
@@ -150,12 +224,24 @@ In the following example the LoggingBehavior will write to console before your r
 
 # Notifications
 
-### 📊 Benchmark Results
-Note! Benchmarks were run with handlers returning only Task.Completed using BenchmarkDotNet
-| Method                    | Mean     | Error   | StdDev  | Code Size | Gen0   | Allocated |
-|-------------------------- |---------:|--------:|--------:|----------:|-------:|----------:|
-| RoutyaCompiled_Sequential | 315.9 ns | 2.21 ns | 1.96 ns |     368 B | 0.0019 |     528 B |
-| RoutyaCompiled_Parallel   | 338.1 ns | 2.84 ns | 2.52 ns |     368 B | 0.0024 |     648 B |
+### 📊 Notification Dispatching Performance
+Benchmarks comparing Routya against MediatR 13.1.0 for notification patterns (BenchmarkDotNet v0.14.0)
+
+| Method                      | Mean     | Ratio | Gen0   | Allocated | Notes |
+|---------------------------- |---------:|------:|-------:|----------:|-------|
+| MediatR_Publish             | 163.8 ns |  1.00 | 0.0017 |     440 B | Baseline |
+| **Routya_Singleton_Sequential** | **163.5 ns** |  **1.00** | 0.0014 |     384 B | ⚡ Equal to MediatR, 13% less memory |
+| **Routya_Singleton_Parallel**   | **181.6 ns** |  **1.11** | 0.0019 |     504 B | 11% overhead for parallelism |
+| **Routya_Transient_Sequential** | **195.4 ns** |  **1.19** | 0.0021 |     560 B | Transient with sequential |
+| **Routya_Transient_Parallel**   | **219.8 ns** |  **1.34** | 0.0026 |     680 B | Transient with parallel |
+| **Routya_Scoped_Sequential**    | **337.9 ns** |  **2.06** | 0.0024 |     656 B | Scoped DI overhead |
+| **Routya_Scoped_Parallel**      | **375.6 ns** |  **2.29** | 0.0029 |     776 B | Scoped + parallel overhead |
+
+**Key Highlights:**
+- ✅ **Singleton sequential** equals MediatR performance (1.00x ratio)
+- ✅ **13% less memory allocation** for Singleton sequential (384B vs 440B)
+- ✅ **Parallel dispatching** available with ~11% overhead
+- ✅ **Flexible lifetime management** for different use cases
 
 Define your notification
 ```C#
@@ -210,3 +296,47 @@ or in parallel
 ```C#
      await dispatcher.PublishParallelAsync(new UserRegisteredNotification("john.doe@example.com"));
 ```
+
+---
+
+## 🌐 Web API Demo
+
+The **Routya.WebApi.Demo** project demonstrates Routya in a production-like environment with:
+- ✅ **All three handler lifetimes** (Singleton, Scoped, Transient)
+- ✅ **Entity Framework Core** with SQL Server
+- ✅ **Full CRUD operations** via RESTful API
+- ✅ **Real-world performance** testing
+
+### Running the Demo
+
+```powershell
+# Start the Web API
+cd Routya.WebApi.Demo
+dotnet run
+```
+
+The API will be available at: `http://localhost:5079`
+
+### Testing with the PowerShell Script
+
+```powershell
+# Run the comprehensive test script
+cd Routya.WebApi.Demo
+.\test-requests.ps1
+```
+
+The test script demonstrates:
+- **Singleton handlers**: Product creation & stock updates (fastest performance)
+- **Scoped handlers**: Get single product & delete (one instance per HTTP request)
+- **Transient handlers**: Get all products (new instance every call, maximum isolation)
+
+### API Endpoints
+
+| Method | Endpoint | Handler Lifetime | Description |
+|--------|----------|------------------|-------------|
+| POST | `/api/products` | Singleton | Create new product |
+| GET | `/api/products` | Transient | Get all products |
+| GET | `/api/products/{id}` | Scoped | Get product by ID |
+| PUT | `/api/products/{id}/stock` | Singleton | Update product stock |
+| DELETE | `/api/products/{id}` | Scoped | Delete product |
+

@@ -30,14 +30,14 @@ namespace Routya.Core.Extensions
             {
                 foreach (var assembly in scanAssemblies)
                 {
-                    RegisterRoutyaHandlersFromAssembly(services, assembly);
+                    RegisterRoutyaHandlersFromAssembly(services, assembly, options.HandlerLifetime);
                 }
             }
 
             return services;
         }
 
-        private static void RegisterRoutyaHandlersFromAssembly(IServiceCollection services, Assembly assembly)
+        private static void RegisterRoutyaHandlersFromAssembly(IServiceCollection services, Assembly assembly, ServiceLifetime lifetime = ServiceLifetime.Scoped)
         {
             var allTypes = assembly.GetTypes().Where(t => !t.IsAbstract && !t.IsInterface);
 
@@ -55,7 +55,19 @@ namespace Routya.Core.Extensions
                         def == typeof(IAsyncRequestHandler<,>) ||
                         def == typeof(INotificationHandler<>))
                     {
-                        services.AddScoped(iface, type);
+                        // Register with the specified lifetime
+                        switch (lifetime)
+                        {
+                            case ServiceLifetime.Singleton:
+                                services.AddSingleton(iface, type);
+                                break;
+                            case ServiceLifetime.Scoped:
+                                services.AddScoped(iface, type);
+                                break;
+                            case ServiceLifetime.Transient:
+                                services.AddTransient(iface, type);
+                                break;
+                        }
                     }
                 }
             }
