@@ -26,7 +26,7 @@ public class BenchmarkNotificationDispatch
         var servicesSingleton = new ServiceCollection();
         servicesSingleton.AddRoutya(cfg => 
         {
-            cfg.Scope = RoutyaDispatchScope.Root;
+            cfg.Scope = RoutyaDispatchScope.Scoped;
             cfg.HandlerLifetime = ServiceLifetime.Singleton;
         }, Assembly.GetExecutingAssembly());
         var providerSingleton = servicesSingleton.BuildServiceProvider();
@@ -36,7 +36,7 @@ public class BenchmarkNotificationDispatch
         var servicesScoped = new ServiceCollection();
         servicesScoped.AddRoutya(cfg => 
         {
-            cfg.Scope = RoutyaDispatchScope.Root;
+            cfg.Scope = RoutyaDispatchScope.Scoped;
             cfg.HandlerLifetime = ServiceLifetime.Scoped;
         }, Assembly.GetExecutingAssembly());
         var providerScoped = servicesScoped.BuildServiceProvider();
@@ -46,7 +46,7 @@ public class BenchmarkNotificationDispatch
         var servicesTransient = new ServiceCollection();
         servicesTransient.AddRoutya(cfg => 
         {
-            cfg.Scope = RoutyaDispatchScope.Root;
+            cfg.Scope = RoutyaDispatchScope.Scoped;
             cfg.HandlerLifetime = ServiceLifetime.Transient;
         }, Assembly.GetExecutingAssembly());
         var providerTransient = servicesTransient.BuildServiceProvider();

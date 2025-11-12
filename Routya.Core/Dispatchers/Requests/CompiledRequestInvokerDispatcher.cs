@@ -13,17 +13,22 @@ namespace Routya.Core.Dispatchers.Requests
     {
         private readonly IServiceProvider _provider;
         private readonly RoutyaDispatcherOptions _options;
+        private readonly System.Collections.Generic.Dictionary<Type, RequestHandlerInfo> _requestHandlerRegistry;
 
-        public CompiledRequestInvokerDispatcher(IServiceProvider provider, RoutyaDispatcherOptions? options = null)
+        public CompiledRequestInvokerDispatcher(
+            IServiceProvider provider, 
+            System.Collections.Generic.Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry,
+            RoutyaDispatcherOptions? options = null)
         {
             _provider = provider;
+            _requestHandlerRegistry = requestHandlerRegistry;
             _options = options ?? new RoutyaDispatcherOptions();
         }
 
         public TResponse Send<TRequest, TResponse>(TRequest request)
             where TRequest : IRequest<TResponse>
         {
-            var pipeline = CompiledPipelineFactory.GetOrAddSync<TRequest, TResponse>();
+            var pipeline = CompiledPipelineFactory.GetOrAddSync<TRequest, TResponse>(_requestHandlerRegistry);
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {
@@ -37,7 +42,7 @@ namespace Routya.Core.Dispatchers.Requests
         public async Task<TResponse> SendAsync<TRequest, TResponse>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest<TResponse>
         {
-            var pipeline = CompiledPipelineFactory.GetOrAdd<TRequest, TResponse>();
+            var pipeline = CompiledPipelineFactory.GetOrAdd<TRequest, TResponse>(_requestHandlerRegistry);
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {

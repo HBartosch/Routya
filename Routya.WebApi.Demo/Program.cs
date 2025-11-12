@@ -4,6 +4,7 @@ using Routya.Core.Extensions;
 using Routya.WebApi.Demo.Data;
 using Routya.WebApi.Demo.Handlers;
 using Routya.WebApi.Demo.Models;
+using Routya.WebApi.Demo.Notifications;
 using Routya.WebApi.Demo.Requests;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,22 +19,22 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         ?? "Server=(localdb)\\mssqllocaldb;Database=RoutyaDemo;Trusted_Connection=True;MultipleActiveResultSets=true"));
 
 // Configure Routya with mixed handler lifetimes demonstration
-// NOTE: To demonstrate all three lifetimes, we need to register handlers individually
-// because AddRoutya's HandlerLifetime option applies to all handlers uniformly
+// NOTE: Using manual registration to demonstrate different lifetimes
 
-// Register Singleton handlers (fastest, shared instance)
-builder.Services.AddSingleton<IAsyncRequestHandler<CreateProductRequest, Product>, CreateProductHandler>();
-builder.Services.AddSingleton<IAsyncRequestHandler<UpdateProductStockRequest, Product?>, UpdateProductStockHandler>();
+// Register Request Handlers
+builder.Services.AddRoutyaAsyncRequestHandler<CreateProductRequest, Product, CreateProductHandler>(ServiceLifetime.Singleton);
+builder.Services.AddRoutyaAsyncRequestHandler<UpdateProductStockRequest, Product?, UpdateProductStockHandler>(ServiceLifetime.Singleton);
+builder.Services.AddRoutyaAsyncRequestHandler<GetProductRequest, Product?, GetProductHandler>(ServiceLifetime.Scoped);
+builder.Services.AddRoutyaAsyncRequestHandler<DeleteProductRequest, bool, DeleteProductHandler>(ServiceLifetime.Scoped);
+builder.Services.AddRoutyaAsyncRequestHandler<GetAllProductsRequest, List<Product>, GetAllProductsHandler>(ServiceLifetime.Transient);
 
-// Register Scoped handlers (one per HTTP request - most common)
-builder.Services.AddScoped<IAsyncRequestHandler<GetProductRequest, Product?>, GetProductHandler>();
-builder.Services.AddScoped<IAsyncRequestHandler<DeleteProductRequest, bool>, DeleteProductHandler>();
+// Register Notification Handlers with different lifetimes
+builder.Services.AddRoutyaNotificationHandler<UserCreatedNotification, LoggingNotificationHandler>(ServiceLifetime.Singleton);
+builder.Services.AddRoutyaNotificationHandler<UserCreatedNotification, EmailNotificationHandler>(ServiceLifetime.Scoped);
+builder.Services.AddRoutyaNotificationHandler<UserCreatedNotification, MetricsNotificationHandler>(ServiceLifetime.Transient);
 
-// Register Transient handlers (new instance every time - most isolated)
-builder.Services.AddTransient<IAsyncRequestHandler<GetAllProductsRequest, List<Product>>, GetAllProductsHandler>();
-
-// Configure Routya core services (dispatcher, etc.) without assembly scanning
-builder.Services.AddRoutya();
+// Configure Routya core services (dispatcher, etc.) with Scoped dispatch mode
+builder.Services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Scoped);
 
 var app = builder.Build();
 

@@ -11,9 +11,25 @@ public class NotificationDispatcherTests
     {
         var services = new ServiceCollection();
 
-        // Register notification handlers
+        // Build notification handler registry manually
+        var registry = new Dictionary<Type, List<Core.Extensions.NotificationHandlerInfo>>
+        {
+            {
+                typeof(INotificationHandler<PongNotification>),
+                new List<Core.Extensions.NotificationHandlerInfo>
+                {
+                    new Core.Extensions.NotificationHandlerInfo { ConcreteType = typeof(LogNotificationHandler), Lifetime = ServiceLifetime.Scoped },
+                    new Core.Extensions.NotificationHandlerInfo { ConcreteType = typeof(MetricsNotificationHandler), Lifetime = ServiceLifetime.Scoped }
+                }
+            }
+        };
+        services.AddSingleton(registry);
+
+        // Register handlers with DI
         services.AddScoped<INotificationHandler<PongNotification>, LogNotificationHandler>();
+        services.AddScoped<LogNotificationHandler>();
         services.AddScoped<INotificationHandler<PongNotification>, MetricsNotificationHandler>();
+        services.AddScoped<MetricsNotificationHandler>();
 
         // Register dispatcher
         services.AddSingleton<IRoutyaNotificationDispatcher, CompiledNotificationDispatcher>();

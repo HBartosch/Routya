@@ -77,8 +77,45 @@ foreach ($p in $finalProducts) {
     Write-Host "  - $($p.name): `$$($p.price) (Stock: $($p.stock))" -ForegroundColor White
 }
 
+# Test 8: Test Notification Handlers (Sequential)
+Write-Host "`n[8] Testing Notification Handlers (Sequential)..." -ForegroundColor Cyan
+$notificationUrl = "http://localhost:5079/api/notifications"
+$userRequest = @{
+    userId = 101
+    name = "John Doe"
+    email = "john.doe@example.com"
+} | ConvertTo-Json
+
+$notifResponse = Invoke-RestMethod -Uri "$notificationUrl/user-created/sequential" -Method Post -Body $userRequest -ContentType "application/json"
+Write-Host "Notification Result: $($notifResponse.message)" -ForegroundColor White
+Write-Host "  - Handlers Executed: $($notifResponse.handlersExecuted) ($($notifResponse.executionMode))" -ForegroundColor White
+Write-Host "  - Singleton (Logging), Scoped (Email), Transient (Metrics)" -ForegroundColor Gray
+
+# Test 9: Test Notification Handlers (Parallel)
+Write-Host "`n[9] Testing Notification Handlers (Parallel)..." -ForegroundColor Cyan
+$userRequest2 = @{
+    userId = 102
+    name = "Jane Smith"
+    email = "jane.smith@example.com"
+} | ConvertTo-Json
+
+$notifResponse2 = Invoke-RestMethod -Uri "$notificationUrl/user-created/parallel" -Method Post -Body $userRequest2 -ContentType "application/json"
+Write-Host "Notification Result: $($notifResponse2.message)" -ForegroundColor White
+Write-Host "  - Handlers Executed: $($notifResponse2.handlersExecuted) ($($notifResponse2.executionMode))" -ForegroundColor White
+
+# Test 10: Test Handler Lifetimes with Multiple Notifications
+Write-Host "`n[10] Testing Handler Lifetimes (Multiple Notifications)..." -ForegroundColor Cyan
+$lifetimeResponse = Invoke-RestMethod -Uri "$notificationUrl/test-lifetimes" -Method Post
+Write-Host "Lifetime Test Result: $($lifetimeResponse.message)" -ForegroundColor White
+Write-Host "  - Total Executions: $($lifetimeResponse.totalExecutions)" -ForegroundColor White
+Write-Host "  - Note: $($lifetimeResponse.note)" -ForegroundColor Gray
+
 Write-Host "`n=== Test Complete! ===" -ForegroundColor Cyan
 Write-Host "`nSummary of Handler Lifetimes Tested:" -ForegroundColor Yellow
-Write-Host "  ✓ SINGLETON handlers executed (CreateProduct, UpdateStock)" -ForegroundColor Green
-Write-Host "  ✓ SCOPED handlers executed (GetProduct, DeleteProduct)" -ForegroundColor Blue
-Write-Host "  ✓ TRANSIENT handlers executed (GetAllProducts - called 3 times)" -ForegroundColor Magenta
+Write-Host "  ✓ SINGLETON handlers executed (CreateProduct, UpdateStock, LoggingNotification)" -ForegroundColor Green
+Write-Host "  ✓ SCOPED handlers executed (GetProduct, DeleteProduct, EmailNotification)" -ForegroundColor Blue
+Write-Host "  ✓ TRANSIENT handlers executed (GetAllProducts, MetricsNotification)" -ForegroundColor Magenta
+Write-Host "`nNotification Handlers Demonstrated:" -ForegroundColor Yellow
+Write-Host "  ✓ Sequential notification dispatch (handlers run one after another)" -ForegroundColor Cyan
+Write-Host "  ✓ Parallel notification dispatch (handlers run concurrently)" -ForegroundColor Cyan
+Write-Host "  ✓ Multiple handler lifetimes in action (check server logs for details)" -ForegroundColor Cyan

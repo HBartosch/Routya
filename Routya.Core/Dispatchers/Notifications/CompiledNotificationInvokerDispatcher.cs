@@ -16,12 +16,18 @@ namespace Routya.Core.Dispatchers.Notifications
     {
         private readonly IServiceProvider _provider;
         private readonly RoutyaDispatcherOptions _options;
+        private readonly Dictionary<Type, List<Extensions.NotificationHandlerInfo>> _notificationHandlerRegistry;
 
-        private static readonly ConcurrentDictionary<Type, NotificationHandlerWrapper[]> _cache = new ConcurrentDictionary<Type, NotificationHandlerWrapper[]>();
+        // Cache per dispatcher instance (not static) to avoid cross-contamination between DI containers
+        private readonly ConcurrentDictionary<Type, NotificationHandlerWrapper[]> _cache = new ConcurrentDictionary<Type, NotificationHandlerWrapper[]>();
 
-        public CompiledNotificationDispatcher(IServiceProvider provider, RoutyaDispatcherOptions? options = null)
+        public CompiledNotificationDispatcher(
+            IServiceProvider provider, 
+            Dictionary<Type, List<Extensions.NotificationHandlerInfo>> notificationHandlerRegistry,
+            RoutyaDispatcherOptions? options = null)
         {
             _provider = provider;
+            _notificationHandlerRegistry = notificationHandlerRegistry;
             _options = options ?? new RoutyaDispatcherOptions();
         }
 
@@ -66,21 +72,71 @@ namespace Routya.Core.Dispatchers.Notifications
         {
             var handlerType = typeof(INotificationHandler<TNotification>);
             
-            // Get handler types from DI once during cache building to know how many handlers exist
-            var handlers = _provider.GetServices(handlerType).ToArray();
+            // Try to get handler info from registry first (fast path)
+            if (_notificationHandlerRegistry.TryGetValue(handlerType, out var handlerInfos) && handlerInfos.Count > 0)
+            {
+                var wrappers = new NotificationHandlerWrapper[handlerInfos.Count];
 
+                for (int i = 0; i < handlerInfos.Count; i++)
+                {
+                    var handlerInfo = handlerInfos[i];
+                    
+                    // For Singleton handlers, resolve and cache the instance NOW
+                    if (handlerInfo.Lifetime == ServiceLifetime.Singleton)
+                    {
+                        var singletonInstance = (INotificationHandler<TNotification>)_provider.GetRequiredService(handlerInfo.ConcreteType);
+                        wrappers[i] = new NotificationHandlerWrapper<TNotification>(
+                            singletonInstance, 
+                            handlerInfo.Lifetime, 
+                            handlerInfo.ConcreteType);
+                    }
+                    else
+                    {
+                        // For Scoped/Transient, just store the type info
+                        wrappers[i] = new NotificationHandlerWrapper<TNotification>(
+                            null, 
+                            handlerInfo.Lifetime, 
+                            handlerInfo.ConcreteType);
+                    }
+                }
+
+                return wrappers;
+            }
+            
+            // Fallback: Not in registry, try GetServices (for backward compatibility)
+            var handlers = _provider.GetServices<INotificationHandler<TNotification>>().ToArray();
             if (handlers.Length == 0)
                 return Array.Empty<NotificationHandlerWrapper>();
-
-            var wrappers = new NotificationHandlerWrapper[handlers.Length];
-
+            
+            // Add discovered handlers to registry for future optimization
+            lock (_notificationHandlerRegistry)
+            {
+                // Double-check it wasn't added by another thread
+                if (!_notificationHandlerRegistry.ContainsKey(handlerType))
+                {
+                    var discoveredHandlerInfos = new List<Extensions.NotificationHandlerInfo>();
+                    foreach (var handler in handlers)
+                    {
+                        discoveredHandlerInfos.Add(new Extensions.NotificationHandlerInfo
+                        {
+                            ConcreteType = handler.GetType(),
+                            Lifetime = ServiceLifetime.Transient // Default fallback lifetime
+                        });
+                    }
+                    _notificationHandlerRegistry[handlerType] = discoveredHandlerInfos;
+                }
+            }
+            
+            // Build wrappers for handlers found via GetServices
+            // Cache the actual handler instances since we already resolved them
+            var fallbackWrappers = new NotificationHandlerWrapper[handlers.Length];
             for (int i = 0; i < handlers.Length; i++)
             {
-                var concreteHandlerType = handlers[i]!.GetType();
-                wrappers[i] = new NotificationHandlerWrapper<TNotification>(concreteHandlerType);
+                // Store the resolved handler instance directly (no type, since we already have the instance)
+                fallbackWrappers[i] = new NotificationHandlerWrapperWithInstance<TNotification>(handlers[i]);
             }
-
-            return wrappers;
+            
+            return fallbackWrappers;
         }
 
         private static async Task InvokeSequential(NotificationHandlerWrapper[] handlers, IServiceProvider provider, object notification, CancellationToken cancellationToken)
@@ -112,28 +168,56 @@ namespace Routya.Core.Dispatchers.Notifications
             public abstract Task Handle(IServiceProvider provider, object notification, CancellationToken cancellationToken);
         }
 
-        private sealed class NotificationHandlerWrapper<TNotification> : NotificationHandlerWrapper
+        private class NotificationHandlerWrapper<TNotification> : NotificationHandlerWrapper
             where TNotification : INotification
         {
-            private readonly Type _concreteHandlerType;
-            private readonly Func<IServiceProvider, INotificationHandler<TNotification>> _handlerFactory;
+            private readonly INotificationHandler<TNotification>? _cachedHandler;
+            private readonly Type? _concreteHandlerType;
+            private readonly ServiceLifetime _lifetime;
 
-            public NotificationHandlerWrapper(Type concreteHandlerType)
+            // Constructor: cache Singleton instance or store concrete type for Scoped/Transient
+            public NotificationHandlerWrapper(INotificationHandler<TNotification> handler, ServiceLifetime lifetime, Type concreteType)
             {
-                _concreteHandlerType = concreteHandlerType;
+                _lifetime = lifetime;
+                _concreteHandlerType = concreteType;
                 
-                // Cache the handler resolution logic to avoid GetServices + FirstOrDefault on every notification
-                _handlerFactory = (provider) =>
-                {
-                    // Direct type resolution is much faster than GetServices + FirstOrDefault
-                    return (INotificationHandler<TNotification>)provider.GetRequiredService(_concreteHandlerType);
-                };
+                // Only cache the instance for Singleton handlers
+                _cachedHandler = lifetime == ServiceLifetime.Singleton ? handler : null;
             }
 
             public override Task Handle(IServiceProvider provider, object notification, CancellationToken cancellationToken)
             {
-                var handler = _handlerFactory(provider);
+                INotificationHandler<TNotification> handler;
+                
+                if (_cachedHandler != null)
+                {
+                    // Fast path: Use cached instance (Singleton or from fallback GetServices)
+                    handler = _cachedHandler;
+                }
+                else
+                {
+                    // Scoped/Transient: Resolve by concrete type directly!
+                    handler = (INotificationHandler<TNotification>)provider.GetRequiredService(_concreteHandlerType!);
+                }
+                
                 return handler.Handle((TNotification)notification!, cancellationToken);
+            }
+        }
+        
+        // Wrapper for fallback handlers resolved via GetServices (already have instance)
+        private class NotificationHandlerWrapperWithInstance<TNotification> : NotificationHandlerWrapper
+            where TNotification : INotification
+        {
+            private readonly INotificationHandler<TNotification> _handler;
+
+            public NotificationHandlerWrapperWithInstance(INotificationHandler<TNotification> handler)
+            {
+                _handler = handler;
+            }
+
+            public override Task Handle(IServiceProvider provider, object notification, CancellationToken cancellationToken)
+            {
+                return _handler.Handle((TNotification)notification!, cancellationToken);
             }
         }
     }

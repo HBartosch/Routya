@@ -14,6 +14,11 @@ public class RequestDispatcherTests
 
         services.AddScoped<IRequestHandler<PingRequest, string>, PingHandler>();
         services.AddScoped<IAsyncRequestHandler<PingRequest, string>, PingHandler>();
+        
+        // Create empty registry for the dispatcher
+        var requestHandlerRegistry = new System.Collections.Generic.Dictionary<System.Type, Routya.Core.Extensions.RequestHandlerInfo>();
+        services.AddSingleton(requestHandlerRegistry);
+        
         services.AddSingleton<IRoutyaRequestDispatcher, CompiledRequestInvokerDispatcher>();
 
         _provider = services.BuildServiceProvider();
