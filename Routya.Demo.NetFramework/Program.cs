@@ -1,8 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
-using Routya.Core.Dispatchers.Notifications;
-using Routya.Core.Dispatchers.Requests;
+using Routya.Core.Extensions;
 using System;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,25 +14,20 @@ namespace Routya.Demo.NetFramework
         {
             var services = new ServiceCollection();
 
-            services.AddSingleton<IRequestHandler<HelloRequest, string>, HelloRequestHandler>();
-            services.AddSingleton<IAsyncRequestHandler<HelloRequest, string>, HelloRequestHandler>();
-
-            services.AddSingleton<INotificationHandler<HelloNotification>, HelloNotificationHandler>();
-            services.AddSingleton<IRoutyaRequestDispatcher, CompiledRequestInvokerDispatcher>();
-            services.AddSingleton<IRoutyaNotificationDispatcher, CompiledNotificationDispatcher>();
+            // Use AddRoutya to automatically configure everything
+            services.AddRoutya(cfg => cfg.Scope = RoutyaDispatchScope.Scoped, Assembly.GetExecutingAssembly());
 
             var provider = services.BuildServiceProvider();
 
-            var requestDispatcher = provider.GetRequiredService<IRoutyaRequestDispatcher>();
-            var notificationDispatcher = provider.GetRequiredService<IRoutyaNotificationDispatcher>();
+            var dispatcher = provider.GetRequiredService<IRoutya>();
 
-            var result = requestDispatcher.Send<HelloRequest, string>(new HelloRequest("Framework Console Sync"));
+            var result = dispatcher.Send<HelloRequest, string>(new HelloRequest("Framework Console Sync"));
             Console.WriteLine("[SYNC] " + result);
 
-            var asyncResult = requestDispatcher.SendAsync<HelloRequest, string>(new HelloRequest("Framework Console Async")).Result;
+            var asyncResult = dispatcher.SendAsync<HelloRequest, string>(new HelloRequest("Framework Console Async"), CancellationToken.None).Result;
             Console.WriteLine("[ASYNC] " + asyncResult);
 
-            notificationDispatcher.PublishAsync(new HelloNotification("Framework Notification")).Wait();
+            dispatcher.PublishAsync(new HelloNotification("Framework Notification"), CancellationToken.None).Wait();
 
             Console.WriteLine("Done.");
             Console.ReadLine();
