@@ -54,7 +54,7 @@ internal class Program
             CancellationToken cancellationToken)
         {
             Console.WriteLine($"[Logging] → {typeof(TRequest).Name}");
-            var result = await next();
+            var result = await next(cancellationToken);
             Console.WriteLine($"[Logging] ✓ {typeof(TRequest).Name}");
             return result;
         }
@@ -68,7 +68,7 @@ internal class Program
             CancellationToken cancellationToken)
         {
             Console.WriteLine($"[Validation] ✔ {typeof(TRequest).Name} passed validation.");
-            return await next();
+            return await next(cancellationToken);
         }
     }
 }

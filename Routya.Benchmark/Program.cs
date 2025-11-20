@@ -195,7 +195,7 @@ public class LoggingBehavior<TRequest, TResponse> : Routya.Core.Abstractions.IPi
         Core.Abstractions.RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        var response = await next();
+        var response = await next(cancellationToken);
         return response;
     }
 }
@@ -207,6 +207,6 @@ public class ValidationBehavior<TRequest, TResponse> : Routya.Core.Abstractions.
         Core.Abstractions.RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        return await next();
+        return await next(cancellationToken);
     }
 }

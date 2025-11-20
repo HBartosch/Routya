@@ -47,10 +47,10 @@ namespace Routya.Core.Dispatchers.Requests
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {
                 using var scope = _provider.CreateScope();
-                return await pipeline(scope.ServiceProvider, request, cancellationToken);
+                return await pipeline(scope.ServiceProvider, request, cancellationToken).ConfigureAwait(false);
             }
 
-            return await pipeline(_provider, request, cancellationToken);
+            return await pipeline(_provider, request, cancellationToken).ConfigureAwait(false);
         }
     }
 }

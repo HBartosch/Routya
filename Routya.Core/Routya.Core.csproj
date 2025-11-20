@@ -2,14 +2,18 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
+    <Version>2.0.0</Version>
     <SignAssembly>False</SignAssembly>
     <Title>Routya</Title>
     <Authors>Henry Bartosch</Authors>
+    <Copyright>Copyright (c) Henry Bartosch</Copyright>
 	<PackageId>Routya.Core</PackageId>
     <RepositoryUrl>https://github.com/HBartosch/Routya</RepositoryUrl>
-	<PackageProjectUrl>https://github.com/HBartosch/Routya</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+	<PackageProjectUrl>https://routya.github.io/</PackageProjectUrl>
     <PackageTags>dispatcher, request, response, notification</PackageTags>
     <Description>request and notification dispatcher</Description>
+    <PackageReleaseNotes>Registry-based optimization with smart fallback and auto-caching. Supports .NET 8, 9, and 10.</PackageReleaseNotes>
 	<PackageIcon>PackageIconResized.png</PackageIcon>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
 	<PackageReadmeFile>README.md</PackageReadmeFile>

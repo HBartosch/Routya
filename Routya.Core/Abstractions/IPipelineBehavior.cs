@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace Routya.Core.Abstractions
 {
-    public delegate Task<TResponse> RequestHandlerDelegate<TResponse>();
+    public delegate Task<TResponse> RequestHandlerDelegate<TResponse>(CancellationToken cancellationToken);
 
     public interface IPipelineBehavior<TRequest, TResponse>
     {

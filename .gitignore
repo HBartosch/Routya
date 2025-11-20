@@ -326,3 +326,4 @@ ASALocalRun/
 **/appsettings.Development.json
 /LocustPerformanceTesting/env
 *.bak
+nul

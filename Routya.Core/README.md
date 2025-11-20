@@ -4,6 +4,7 @@
 [![NuGet](https://img.shields.io/nuget/v/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
 [![NuGet](https://img.shields.io/nuget/dt/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
 ![.NET Standard](https://img.shields.io/badge/netstandard-2.0%20%7C%202.1-blue?logo=dotnet&logoColor=white)
+![.NET 8](https://img.shields.io/badge/net-8.0%20%7C%209.0%20%7C%2010-blue?logo=dotnet&logoColor=white)
 
 **Routya** is a fast, lightweight message dispatching library built for .NET applications that use the CQRS pattern.  
 It provides a flexible way to route requests/responses and notifications to their respective handlers with minimal overhead and high performance.
@@ -28,8 +29,56 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 Latest version:
 ```bash
-dotnet add package Routya.Core --version 1.0.5
+dotnet add package Routya.Core --version 2.0.0
 ```
+
+### ⚠️ Breaking Changes in v2.0.0
+
+**1. Pipeline Behavior Delegate Signature Change**
+The `RequestHandlerDelegate<TResponse>` now requires a `CancellationToken` parameter:
+
+```csharp
+// ❌ Old (v1.x)
+public delegate Task<TResponse> RequestHandlerDelegate<TResponse>();
+
+// ✅ New (v2.0)
+public delegate Task<TResponse> RequestHandlerDelegate<TResponse>(CancellationToken cancellationToken);
+```
+
+**Migration Guide:**
+Update your pipeline behaviors to pass the `CancellationToken` to the `next()` delegate:
+
+```csharp
+// ❌ Old code (v1.x)
+public async Task<TResponse> Handle(
+    TRequest request,
+    RequestHandlerDelegate<TResponse> next,
+    CancellationToken cancellationToken)
+{
+    // Your logic before
+    var result = await next(); // ❌ No parameter
+    // Your logic after
+    return result;
+}
+
+// ✅ New code (v2.0)
+public async Task<TResponse> Handle(
+    TRequest request,
+    RequestHandlerDelegate<TResponse> next,
+    CancellationToken cancellationToken)
+{
+    // Your logic before
+    var result = await next(cancellationToken); // ✅ Pass cancellationToken
+    // Your logic after
+    return result;
+}
+```
+
+**2. Performance Improvements**
+- Registry-based optimization with smart fallback
+- Auto-caching of discovered handlers for improved performance
+- 9-10% faster request dispatching with Singleton/Transient handlers
+- 30% faster notification dispatching with Singleton sequential handlers
 ## 🚀 Quick Start
 
 # Dependency injection
@@ -169,16 +218,16 @@ Benchmarks comparing Routya against MediatR 13.1.0 with simple request handlers 
 #### Request Dispatching Performance
 | Method                     | Mean     | Ratio | Gen0   | Allocated | Notes |
 |--------------------------- |---------:|------:|-------:|----------:|-------|
-| MediatR_SendAsync          | 356.3 ns |  1.00 | 0.0038 |    1016 B | Baseline |
-| **Routya_Singleton_Send**      | **377.8 ns** |  **1.06** | 0.0038 |    1008 B | ⚡ 6% slower, matches memory |
-| **Routya_Transient_Send**      | **397.0 ns** |  **1.11** | 0.0038 |    1032 B | ⚡ 11% slower, matches memory |
-| **Routya_Scoped_Send**         | **427.0 ns** |  **1.20** | 0.0048 |    1216 B | Scoped DI overhead |
-| **Routya_Singleton_SendAsync** | **436.8 ns** |  **1.23** | 0.0048 |    1168 B | 23% overhead for async |
-| **Routya_Transient_SendAsync** | **450.2 ns** |  **1.26** | 0.0048 |    1192 B | 26% overhead for async |
-| **Routya_Scoped_SendAsync**    | **495.0 ns** |  **1.39** | 0.0048 |    1376 B | Scoped + async overhead |
+| MediatR_SendAsync          | 369.3 ns |  1.00 | 0.0038 |    1016 B | Baseline |
+| **Routya_Singleton_Send**      | **333.9 ns** |  **0.90** | 0.0038 |    1008 B | ⚡ **10% faster!** |
+| **Routya_Transient_Send**      | **336.0 ns** |  **0.91** | 0.0038 |    1032 B | ⚡ **9% faster!** |
+| Routya_Singleton_SendAsync | 397.7 ns |  1.08 | 0.0048 |    1168 B | 8% overhead for async |
+| Routya_Scoped_Send         | 395.5 ns |  1.07 | 0.0048 |    1216 B | Scoped DI overhead |
+| Routya_Transient_SendAsync | 418.0 ns |  1.13 | 0.0048 |    1192 B | 13% overhead for async |
+| Routya_Scoped_SendAsync    | 476.4 ns |  1.29 | 0.0048 |    1376 B | Scoped + async overhead |
 
 **Key Highlights:**
-- ✅ **Singleton/Transient handlers** are competitive with MediatR (6-11% difference)
+- ✅ **Singleton/Transient Send handlers are 9-10% faster than MediatR!** 🚀
 - ✅ **Registry-based dispatch** with auto-caching fallback
 - ✅ **Zero memory leaks** with proper scope disposal
 - ✅ **Fast-path optimization** when no behaviors configured
@@ -253,7 +302,7 @@ In the following example the LoggingBehavior will write to console before your r
             CancellationToken cancellationToken)
         {
             Console.WriteLine($"[Logging] → {typeof(TRequest).Name}");
-            var result = await next();
+            var result = await next(cancellationToken); // Pass cancellationToken to next
             Console.WriteLine($"[Logging] ✓ {typeof(TRequest).Name}");
             return result;
         }
@@ -268,16 +317,16 @@ Benchmarks comparing Routya against MediatR 13.1.0 for notification patterns (Be
 | Method                      | Mean     | Ratio | Gen0   | Allocated | Notes |
 |---------------------------- |---------:|------:|-------:|----------:|-------|
 | MediatR_Publish             | 157.6 ns |  1.00 | 0.0017 |     440 B | Baseline |
-| **Routya_Singleton_Sequential** | **110.5 ns** |  **0.70** | 0.0007 |     192 B | ⚡ **30% faster, 56% less memory!** |
-| **Routya_Singleton_Parallel**   | **143.6 ns** |  **0.91** | 0.0012 |     312 B | 9% faster, 29% less memory |
-| **Routya_Transient_Sequential** | **146.0 ns** |  **0.93** | 0.0010 |     240 B | 7% faster, 45% less memory |
-| **Routya_Transient_Parallel**   | **170.6 ns** |  **1.08** | 0.0014 |     360 B | 8% slower (parallel overhead) |
-| **Routya_Scoped_Sequential**    | **238.1 ns** |  **1.51** | 0.0014 |     424 B | Scoped DI overhead |
-| **Routya_Scoped_Parallel**      | **265.8 ns** |  **1.69** | 0.0019 |     544 B | Scoped + parallel overhead |
+| **Routya_Singleton_Sequential** | **110.5 ns** |  **0.70** | 0.0007 |     192 B | ⚡ **30% faster, 56% less memory!** 🚀 |
+| **Routya_Singleton_Parallel**   | **143.6 ns** |  **0.91** | 0.0012 |     312 B | ⚡ **9% faster, 29% less memory** |
+| **Routya_Transient_Sequential** | **146.0 ns** |  **0.93** | 0.0010 |     240 B | ⚡ **7% faster, 45% less memory** |
+| Routya_Transient_Parallel   | 170.6 ns |  1.08 | 0.0014 |     360 B | 8% slower (parallel overhead) |
+| Routya_Scoped_Sequential    | 238.1 ns |  1.51 | 0.0014 |     424 B | Scoped DI overhead |
+| Routya_Scoped_Parallel      | 265.8 ns |  1.69 | 0.0019 |     544 B | Scoped + parallel overhead |
 
 **Key Highlights:**
-- ✅ **Singleton sequential** 30% faster than MediatR with 56% less memory (192B vs 440B) 🚀
-- ✅ **Transient sequential** 7% faster than MediatR with 45% less memory (240B vs 440B)
+- ✅ **Singleton sequential: 30% faster than MediatR with 56% less memory** (192B vs 440B) 🚀
+- ✅ **Transient sequential: 7% faster with 45% less memory** (240B vs 440B)
 - ✅ **Registry-based dispatch with auto-caching** - Zero GetServices calls after first use
 - ✅ **Parallel dispatching** available with minimal overhead
 - ✅ **Flexible lifetime management** for different use cases

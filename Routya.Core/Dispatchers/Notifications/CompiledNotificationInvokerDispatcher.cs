@@ -48,22 +48,22 @@ namespace Routya.Core.Dispatchers.Notifications
                 using var scope = _provider.CreateScope();
                 if (strategy == NotificationDispatchStrategy.Sequential)
                 {
-                    await InvokeSequential(handlers, scope.ServiceProvider, notification!, cancellationToken);
+                    await InvokeSequential(handlers, scope.ServiceProvider, notification!, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    await InvokeParallel(handlers, scope.ServiceProvider, notification!, cancellationToken);
+                    await InvokeParallel(handlers, scope.ServiceProvider, notification!, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
             {
                 if (strategy == NotificationDispatchStrategy.Sequential)
                 {
-                    await InvokeSequential(handlers, _provider, notification!, cancellationToken);
+                    await InvokeSequential(handlers, _provider, notification!, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    await InvokeParallel(handlers, _provider, notification!, cancellationToken);
+                    await InvokeParallel(handlers, _provider, notification!, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
