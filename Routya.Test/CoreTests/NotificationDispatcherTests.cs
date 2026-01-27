@@ -57,7 +57,7 @@ public class NotificationDispatcherTests
 
     public class LogNotificationHandler : INotificationHandler<PongNotification>
     {
-        public static string Message { get; set; }
+        public static string Message { get; set; } = null!;
 
         public Task Handle(PongNotification notification, CancellationToken cancellationToken)
         {
@@ -68,7 +68,7 @@ public class NotificationDispatcherTests
 
     public class MetricsNotificationHandler : INotificationHandler<PongNotification>
     {
-        public static string Message { get; set; }
+        public static string Message { get; set; } = null!;
 
         public Task Handle(PongNotification notification, CancellationToken cancellationToken)
         {

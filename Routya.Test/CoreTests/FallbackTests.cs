@@ -24,7 +24,7 @@ public class FallbackTests
         var dispatcher = provider.GetRequiredService<IRoutyaNotificationDispatcher>();
         
         // Act: Dispatch notification
-        TestNotificationHandler.MessageReceived = null;
+        TestNotificationHandler.MessageReceived = null!;
         await dispatcher.PublishAsync(new TestNotification("Fallback Test"));
         
         // Assert: Handler should have been invoked via fallback
@@ -80,7 +80,7 @@ public class FallbackTests
     
     public class TestNotificationHandler : INotificationHandler<TestNotification>
     {
-        public static string MessageReceived { get; set; }
+        public static string MessageReceived { get; set; } = null!;
         
         public Task Handle(TestNotification notification, CancellationToken cancellationToken = default)
         {

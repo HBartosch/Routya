@@ -109,7 +109,7 @@ namespace Routya.Core.Dispatchers.Notifications
                     {
                         // For Scoped/Transient, just store the type info
                         wrappers[i] = new NotificationHandlerWrapper<TNotification>(
-                            null, 
+                            null!, 
                             handlerInfo.Lifetime, 
                             handlerInfo.ConcreteType);
                     }

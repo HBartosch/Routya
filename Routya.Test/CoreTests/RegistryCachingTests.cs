@@ -64,7 +64,7 @@ namespace Routya.Test.CoreTests
         // Test types
         public class TestRequest : IRequest<string>
         {
-            public string Value { get; set; }
+            public string Value { get; set; } = null!;
         }
         
         public class TestRequestHandler : IAsyncRequestHandler<TestRequest, string>
@@ -77,7 +77,7 @@ namespace Routya.Test.CoreTests
         
         public class TestNotification : INotification
         {
-            public string Message { get; set; }
+            public string Message { get; set; } = null!;
         }
         
         public class TestNotificationHandler : INotificationHandler<TestNotification>

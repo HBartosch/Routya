@@ -19,7 +19,7 @@ namespace Routya.Core.Extensions
         /// <summary>
         /// Gets or sets the concrete type of the notification handler.
         /// </summary>
-        public Type ConcreteType { get; set; }
+        public Type ConcreteType { get; set; } = null!;
         
         /// <summary>
         /// Gets or sets the service lifetime of the notification handler.
@@ -35,7 +35,7 @@ namespace Routya.Core.Extensions
         /// <summary>
         /// Gets or sets the concrete type of the request handler.
         /// </summary>
-        public Type ConcreteType { get; set; }
+        public Type ConcreteType { get; set; } = null!;
         
         /// <summary>
         /// Gets or sets the service lifetime of the request handler.
@@ -106,7 +106,7 @@ namespace Routya.Core.Extensions
         /// </remarks>
         public static IServiceCollection AddRoutya(
             this IServiceCollection services, 
-            Action<RoutyaDispatcherOptions>? configure = null,
+            Action<RoutyaDispatcherOptions>? configure = null!,
             params Assembly[] scanAssemblies)
         {
             var options = new RoutyaDispatcherOptions();

@@ -38,7 +38,7 @@ namespace Routya.Core.Dispatchers.Pipelines
 
             // Check registry for handler info - try async first, then sync if not found
             requestHandlerRegistry.TryGetValue(asyncHandlerType, out var asyncHandlerInfo);
-            RequestHandlerInfo syncHandlerInfo = null;
+            RequestHandlerInfo? syncHandlerInfo = null;
             if (asyncHandlerInfo == null)
             {
                 requestHandlerRegistry.TryGetValue(syncHandlerType, out syncHandlerInfo);
@@ -55,7 +55,7 @@ namespace Routya.Core.Dispatchers.Pipelines
             return (provider, request, cancellationToken) =>
             {
                 // Resolve handler
-                IAsyncRequestHandler<TRequest, TResponse> asyncHandler = null;
+                IAsyncRequestHandler<TRequest, TResponse>? asyncHandler = null;
                 
                 if (asyncHandlerInfo != null)
                 {
@@ -104,7 +104,7 @@ namespace Routya.Core.Dispatchers.Pipelines
                 }
                 
                 // Fallback to sync handler
-                IRequestHandler<TRequest, TResponse> syncHandler = null;
+                IRequestHandler<TRequest, TResponse>? syncHandler = null;
                 if (syncHandlerInfo != null)
                 {
                     syncHandler = (IRequestHandler<TRequest, TResponse>)provider.GetRequiredService(syncHandlerInfo.ConcreteType);
@@ -259,7 +259,7 @@ namespace Routya.Core.Dispatchers.Pipelines
             
             return (provider, request) =>
             {
-                IRequestHandler<TRequest, TResponse> handler;
+                IRequestHandler<TRequest, TResponse>? handler;
                 
                 if (handlerInfo != null)
                 {
