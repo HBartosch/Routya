@@ -12,6 +12,14 @@ using System.Threading.Tasks;
 
 namespace Routya.Core.Dispatchers.Notifications
 {
+    /// <summary>
+    /// High-performance notification dispatcher using compiled expression trees for fast handler invocation.
+    /// </summary>
+    /// <remarks>
+    /// This dispatcher uses a registry-based approach with compiled expressions and per-instance caching.
+    /// Handlers are discovered from the registry and compiled on first use, then cached for subsequent dispatches.
+    /// Supports both sequential and parallel notification publishing strategies.
+    /// </remarks>
     public sealed class CompiledNotificationDispatcher : IRoutyaNotificationDispatcher
     {
         private readonly IServiceProvider _provider;
@@ -21,6 +29,12 @@ namespace Routya.Core.Dispatchers.Notifications
         // Cache per dispatcher instance (not static) to avoid cross-contamination between DI containers
         private readonly ConcurrentDictionary<Type, NotificationHandlerWrapper[]> _cache = new ConcurrentDictionary<Type, NotificationHandlerWrapper[]>();
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CompiledNotificationDispatcher"/> class.
+        /// </summary>
+        /// <param name="provider">The service provider for resolving handlers.</param>
+        /// <param name="notificationHandlerRegistry">The registry containing pre-registered handler information.</param>
+        /// <param name="options">Configuration options for the dispatcher.</param>
         public CompiledNotificationDispatcher(
             IServiceProvider provider, 
             Dictionary<Type, List<Extensions.NotificationHandlerInfo>> notificationHandlerRegistry,
@@ -31,6 +45,7 @@ namespace Routya.Core.Dispatchers.Notifications
             _options = options ?? new RoutyaDispatcherOptions();
         }
 
+        /// <inheritdoc />
         public async Task PublishAsync<TNotification>(
             TNotification notification,
             NotificationDispatchStrategy strategy = NotificationDispatchStrategy.Sequential,
