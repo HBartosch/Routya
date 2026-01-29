@@ -19,7 +19,12 @@ jobs:
         dotnet-version: '8.0.x'
     
     - name: Restore dependencies
-      run: dotnet restore Routya.Core/Routya.Core.sln
+      run: |
+        dotnet restore Routya.Core/Routya.Core.sln
+        dotnet restore Routya.SourceGenerators/Routya.SourceGenerators.csproj
+        dotnet restore Routya.SourceGen.Demo/Routya.SourceGen.Demo.csproj
+        dotnet restore Routya.SourceGen.Benchmark/Routya.SourceGen.Benchmark.csproj
+        dotnet restore Routya.SourceGen.DatabaseDemo/Routya.SourceGen.DatabaseDemo.csproj
     
     - name: Build Routya.Core
       run: dotnet build Routya.Core/Routya.Core.csproj --configuration Release --no-restore
