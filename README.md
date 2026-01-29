@@ -11,26 +11,70 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 ---
 
+## ⚡ **NEW: v3.0 Source Generator - 46% Faster!**
+
+Get **compile-time code generation** for zero-overhead dispatching:
+
+```bash
+dotnet add package Routya.SourceGenerators --version 3.0.0
+```
+
+```csharp
+using Routya.Generated;
+
+builder.Services.AddGeneratedRoutya(); // Auto-registers all handlers!
+
+public class MyController : ControllerBase
+{
+    private readonly IGeneratedRoutya _routya;
+    
+    public MyController(IGeneratedRoutya routya) => _routya = routya;
+    
+    public async Task<User> GetUser(int id)
+    {
+        return await _routya.SendAsync(new GetUserRequest { UserId = id });
+    }
+}
+```
+
+**Performance:**
+- ⚡ **46% faster** than MediatR on notifications
+- 🔥 **Zero reflection** - all dispatch code generated at compile-time
+- 📦 **Zero dictionary lookups** - direct method calls
+- 🎯 **Full IntelliSense** - type-specific interface with your exact methods
+
+📖 **[Getting Started Guide →](./GETTING_STARTED_V3.md)** | 📦 **[Release Notes →](./RELEASE_NOTES_V3.md)** | 📚 **[Full Docs →](./Routya.SourceGenerators/README.md)**
+
+---
+
 ## ✨ Features
 
 - ✅ Clean interface-based abstraction for Requests/Responses and Notifications
 - 🚀 **High-performance dispatching** - Competitive with MediatR while offering more flexibility
+- **⚡ NEW: Source generation** - Compile-time code generation for maximum speed
+- **🌊 NEW: Streaming support** - `IAsyncEnumerable<T>` for large datasets
 - ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
-- 🧩 Optional pipeline behavior support for cross-cutting concerns
+- 🧩 Pipeline behavior support for cross-cutting concerns
 - 🔄 Supports both **sequential** and **parallel** notification dispatching
 - 🎯 **Multi-framework support** - netstandard2.0, netstandard2.1, .NET 8, .NET 9, .NET 10
 - 💾 **Memory efficient** - Zero memory leaks with proper scope management
 - ♻️ Simple to extend and integrate with your existing architecture
-- 🧪 Built with performance and clarity in mind
 
 ---
 
-## 📦 NuGet Package
+## 📦 NuGet Packages
 
-Latest version:
+### v3.0 - Source Generator (Recommended for new projects)
+```bash
+dotnet add package Routya.SourceGenerators --version 3.0.0
+```
+Includes `Routya.Core` automatically.
+
+### v2.x - Runtime Dispatcher
 ```bash
 dotnet add package Routya.Core --version 2.0.0
 ```
+Use for existing projects or when runtime flexibility is needed.
 
 ### ⚠️ Breaking Changes in v2.0.0
 

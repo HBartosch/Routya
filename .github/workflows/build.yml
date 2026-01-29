@@ -1,0 +1,66 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build Routya.Core
+      run: dotnet build Routya.Core/Routya.Core.csproj --configuration Release --no-restore
+    
+    - name: Build Source Generator
+      run: dotnet build Routya.SourceGenerators/Routya.SourceGenerators.csproj --configuration Release --no-restore
+    
+    - name: Build Demo Project (Verify Source Generation)
+      run: dotnet build Routya.SourceGen.Demo/Routya.SourceGen.Demo.csproj --configuration Release --no-restore
+    
+    - name: Verify Generated Files Exist
+      shell: pwsh
+      run: |
+        $registrationFile = Get-ChildItem -Path "Routya.SourceGen.Demo\obj" -Recurse -Filter "*Registration*.g.cs" | Select-Object -First 1
+        $dispatcherFile = Get-ChildItem -Path "Routya.SourceGen.Demo\obj" -Recurse -Filter "*Dispatcher*.g.cs" | Select-Object -First 1
+        
+        if ($null -eq $registrationFile) {
+          Write-Error "Registration file not generated!"
+          exit 1
+        }
+        
+        if ($null -eq $dispatcherFile) {
+          Write-Error "Dispatcher file not generated!"
+          exit 1
+        }
+        
+        Write-Host "✅ Registration file: $($registrationFile.FullName)"
+        Write-Host "✅ Dispatcher file: $($dispatcherFile.FullName)"
+    
+    - name: Run Demo Application
+      run: dotnet run --project Routya.SourceGen.Demo/Routya.SourceGen.Demo.csproj --configuration Release --no-build
+    
+    - name: Build Benchmark Project
+      run: dotnet build Routya.SourceGen.Benchmark/Routya.SourceGen.Benchmark.csproj --configuration Release --no-restore
+    
+    - name: Run Benchmarks (Quick Mode)
+      run: dotnet run --project Routya.SourceGen.Benchmark/Routya.SourceGen.Benchmark.csproj --configuration Release --no-build -- --filter "*" --job short
+    
+    - name: Run Tests (if test project exists)
+      run: |
+        if (Test-Path "Routya.Test/Routya.Test.csproj") {
+          dotnet test Routya.Test/Routya.Test.csproj --configuration Release --no-restore
+        }
+      shell: pwsh

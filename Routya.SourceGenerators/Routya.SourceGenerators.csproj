@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <Version>3.0.0-preview.1</Version>
+    <Title>Routya.SourceGenerators</Title>
+    <Authors>Henry Bartosch</Authors>
+    <Copyright>Copyright (c) Henry Bartosch</Copyright>
+    <PackageId>Routya.SourceGenerators</PackageId>
+    <RepositoryUrl>https://github.com/HBartosch/Routya</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://routya.github.io/</PackageProjectUrl>
+    <PackageTags>dispatcher;request;response;notification;source-generator;roslyn;performance;routya</PackageTags>
+    <Description>Source generators for Routya to achieve zero-overhead, compile-time optimized dispatching</Description>
+    <PackageReleaseNotes>Preview release of source generators for 30-50% performance improvement over runtime reflection.</PackageReleaseNotes>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Include LICENSE file in package -->
+    <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <!-- Include the generator DLL in the analyzer path -->
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+</Project>
