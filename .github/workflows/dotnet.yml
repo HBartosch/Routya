@@ -25,18 +25,27 @@ jobs:
           8.0.x
           9.0.x
           10.0.x
-    - name: Restore dependencies
+    - name: Restore dependencies (Core)
       run: dotnet restore Routya.Core/Routya.Core.csproj
-      
-    - name: Build
+
+    - name: Restore dependencies (SourceGenerators)
+      run: dotnet restore Routya.SourceGenerators/Routya.SourceGenerators.csproj
+
+    - name: Build (Core)
       run: dotnet build Routya.Core/Routya.Core.csproj --configuration Release --no-restore
+
+    - name: Build (SourceGenerators)
+      run: dotnet build Routya.SourceGenerators/Routya.SourceGenerators.csproj --configuration Release --no-restore
 
     - name: Get version from tag
       id: get_version
       run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-      
-    - name: Pack
+
+    - name: Pack (Core)
       run: dotnet pack Routya.Core/Routya.Core.csproj --configuration Release /p:PackageVersion=${{ env.VERSION }} --no-build --output ./nupkgs
+
+    - name: Pack (SourceGenerators)
+      run: dotnet pack Routya.SourceGenerators/Routya.SourceGenerators.csproj --configuration Release /p:PackageVersion=${{ env.VERSION }} --no-build --output ./nupkgs
 
     - name: Push to NuGet
       run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
