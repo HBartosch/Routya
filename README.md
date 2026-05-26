@@ -431,44 +431,42 @@ or in parallel
 
 ---
 
-## 🌐 Web API Demo
+## 🌐 Web API Demos
 
-The **Routya.WebApi.Demo** project demonstrates Routya in a production-like environment with:
+### Source Generator demo — [`Routya.WebApi.SourceGen.Demo`](./Routya.WebApi.SourceGen.Demo)
+
+The recommended starting point if you're using `IGeneratedRoutya`. Demonstrates:
+- ✅ **Compile-time dispatch** via `AddGeneratedRoutya()` — no reflection, no assembly scanning
+- ✅ **Open-generic pipeline behavior** (`LoggingBehavior<TRequest, TResponse>`)
+- ✅ **Notification fan-out** — two handlers dispatched in parallel from a single `PublishAsync`
+- ✅ **`IAsyncEnumerable<T>` streaming** — products streamed one by one to the HTTP response
+
+```powershell
+cd Routya.WebApi.SourceGen.Demo
+dotnet run
+# http://localhost:5080
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/products` | List all products |
+| GET | `/products/{id}` | Get a single product |
+| POST | `/products` | Create a product |
+| GET | `/products/stream` | Stream products via `IAsyncEnumerable<T>` |
+| POST | `/orders/{id}/shipped` | Publish a notification to two handlers |
+
+---
+
+### Runtime dispatch demo — [`Routya.WebApi.Demo`](./Routya.WebApi.Demo)
+
+Demonstrates `IRoutya` (runtime reflection-based dispatch) with Entity Framework Core:
 - ✅ **All three handler lifetimes** (Singleton, Scoped, Transient)
 - ✅ **Entity Framework Core** with SQL Server
 - ✅ **Full CRUD operations** via RESTful API
-- ✅ **Real-world performance** testing
-
-### Running the Demo
 
 ```powershell
-# Start the Web API
 cd Routya.WebApi.Demo
 dotnet run
+# http://localhost:5079
 ```
-
-The API will be available at: `http://localhost:5079`
-
-### Testing with the PowerShell Script
-
-```powershell
-# Run the comprehensive test script
-cd Routya.WebApi.Demo
-.\test-requests.ps1
-```
-
-The test script demonstrates:
-- **Singleton handlers**: Product creation & stock updates (fastest performance)
-- **Scoped handlers**: Get single product & delete (one instance per HTTP request)
-- **Transient handlers**: Get all products (new instance every call, maximum isolation)
-
-### API Endpoints
-
-| Method | Endpoint | Handler Lifetime | Description |
-|--------|----------|------------------|-------------|
-| POST | `/api/products` | Singleton | Create new product |
-| GET | `/api/products` | Transient | Get all products |
-| GET | `/api/products/{id}` | Scoped | Get product by ID |
-| PUT | `/api/products/{id}/stock` | Singleton | Update product stock |
-| DELETE | `/api/products/{id}` | Scoped | Delete product |
 

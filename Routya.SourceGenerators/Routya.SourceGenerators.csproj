@@ -9,7 +9,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
-    <Version>3.0.0-preview.1</Version>
+    <Version>3.1.0</Version>
     <Title>Routya.SourceGenerators</Title>
     <Authors>Henry Bartosch</Authors>
     <Copyright>Copyright (c) Henry Bartosch</Copyright>
@@ -19,8 +19,9 @@
     <PackageProjectUrl>https://routya.github.io/</PackageProjectUrl>
     <PackageTags>dispatcher;request;response;notification;source-generator;roslyn;performance;routya</PackageTags>
     <Description>Source generators for Routya to achieve zero-overhead, compile-time optimized dispatching</Description>
-    <PackageReleaseNotes>Preview release of source generators for 30-50% performance improvement over runtime reflection.</PackageReleaseNotes>
+    <PackageReleaseNotes>See CHANGELOG.md at https://github.com/HBartosch/Routya/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageIcon>PackageIconResized.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +32,7 @@
   <ItemGroup>
     <!-- Include LICENSE file in package -->
     <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\Routya.Core\PackageIconResized.png" Pack="true" PackagePath="" />
     <!-- Include the generator DLL in the analyzer path -->
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>

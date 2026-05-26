@@ -2,7 +2,7 @@ name: Build & Test
 
 on:
   push:
-    branches: [ main]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
@@ -13,19 +13,77 @@ jobs:
       contents: read
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: | 
+        dotnet-version: |
           8.0.x
           9.0.x
           10.0.x
 
-    - name: Restore dependencies
-      run: dotnet restore Routya.Test/Routya.Test.csproj
+    - name: Restore (Core)
+      run: dotnet restore Routya.Core/Routya.Core.csproj
 
-    - name: Run tests
+    - name: Restore (SourceGenerators)
+      run: dotnet restore Routya.SourceGenerators/Routya.SourceGenerators.csproj
+
+    - name: Restore (Package)
+      run: dotnet restore Routya.Package/Routya.Package.csproj
+
+    - name: Build (Core)
+      run: dotnet build Routya.Core/Routya.Core.csproj --configuration Release --no-restore
+
+    - name: Build (SourceGenerators)
+      run: dotnet build Routya.SourceGenerators/Routya.SourceGenerators.csproj --configuration Release --no-restore
+
+    - name: Build (Package)
+      run: dotnet build Routya.Package/Routya.Package.csproj --configuration Release --no-restore
+
+    - name: Run tests (Routya.Test)
       run: dotnet test Routya.Test/Routya.Test.csproj --configuration Release --verbosity normal
+
+    - name: Run tests (Routya.SourceGen.Test)
+      run: dotnet test Routya.SourceGen.Test/Routya.SourceGen.Test.csproj --configuration Release --verbosity normal
+
+    - name: Verify source generator output (Routya.SourceGen.Test)
+      run: |
+        reg=$(find Routya.SourceGen.Test/obj -name "RoutyaGenerated.Registration.g.cs" | head -1)
+        dis=$(find Routya.SourceGen.Test/obj -name "RoutyaGenerated.Dispatcher.g.cs" | head -1)
+        if [ -z "$reg" ]; then echo "Registration file not generated" && exit 1; fi
+        if [ -z "$dis" ]; then echo "Dispatcher file not generated" && exit 1; fi
+        echo "Registration: $reg"
+        echo "Dispatcher:   $dis"
+        echo "--- Handler methods in dispatcher ---"
+        grep -E "public (async )?Task" "$dis"
+
+    # Pack a dev version so the NuGet integration test can run against the local feed
+    - name: Pack (Core) — ci version
+      run: dotnet pack Routya.Core/Routya.Core.csproj --configuration Release /p:PackageVersion=0.0.0-ci --no-build --output ./nupkgs
+
+    - name: Pack (SourceGenerators) — ci version
+      run: dotnet pack Routya.SourceGenerators/Routya.SourceGenerators.csproj --configuration Release /p:PackageVersion=0.0.0-ci --no-build --output ./nupkgs
+
+    - name: Pack (Routya) — ci version
+      run: dotnet pack Routya.Package/Routya.Package.csproj --configuration Release /p:PackageVersion=0.0.0-ci --no-build --output ./nupkgs
+
+    - name: Restore NuGet integration test
+      run: dotnet restore Routya.NuGet.IntegrationTest/Routya.NuGet.IntegrationTest.csproj /p:RoutyaVersion=0.0.0-ci
+
+    - name: Build NuGet integration test
+      run: dotnet build Routya.NuGet.IntegrationTest/Routya.NuGet.IntegrationTest.csproj --configuration Release --no-restore
+
+    - name: Verify source generator output (Routya.NuGet.IntegrationTest)
+      run: |
+        reg=$(find Routya.NuGet.IntegrationTest/obj -name "RoutyaGenerated.Registration.g.cs" | head -1)
+        dis=$(find Routya.NuGet.IntegrationTest/obj -name "RoutyaGenerated.Dispatcher.g.cs" | head -1)
+        if [ -z "$reg" ]; then echo "Registration file not generated" && exit 1; fi
+        if [ -z "$dis" ]; then echo "Dispatcher file not generated" && exit 1; fi
+        echo "Registration: $reg"
+        echo "Dispatcher:   $dis"
+        echo "--- Handler methods in dispatcher ---"
+        grep -E "public (async )?Task" "$dis"
+
+    - name: Run NuGet integration tests
+      run: dotnet test Routya.NuGet.IntegrationTest/Routya.NuGet.IntegrationTest.csproj --configuration Release --no-build --logger "console;verbosity=normal"

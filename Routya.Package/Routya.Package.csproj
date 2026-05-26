@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>Routya</PackageId>
+    <Version>3.1.0</Version>
+    <Title>Routya</Title>
+    <Authors>Henry Bartosch</Authors>
+    <Copyright>Copyright (c) Henry Bartosch</Copyright>
+    <RepositoryUrl>https://github.com/HBartosch/Routya</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://routya.github.io/</PackageProjectUrl>
+    <PackageTags>dispatcher;request;response;notification;source-generator;cqrs;routya</PackageTags>
+    <Description>The all-in-one Routya package. Includes Routya.Core (high-performance CQRS dispatcher) and Routya.SourceGenerators (compile-time optimized dispatch with zero reflection). Install this single package to get the full Routya experience.</Description>
+    <PackageIcon>PackageIconResized.png</PackageIcon>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>See CHANGELOG.md at https://github.com/HBartosch/Routya/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
+    <NoWarn>NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\CHANGELOG.md" Pack="true" PackagePath="" />
+    <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="..\Routya.Core\PackageIconResized.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Routya.Core\Routya.Core.csproj" />
+    <ProjectReference Include="..\Routya.SourceGenerators\Routya.SourceGenerators.csproj" />
+  </ItemGroup>
+
+</Project>
