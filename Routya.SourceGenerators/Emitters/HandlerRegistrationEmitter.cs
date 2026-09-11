@@ -1,4 +1,4 @@
-using Routya.SourceGenerators.Models;
+﻿using Routya.SourceGenerators.Models;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -40,8 +40,8 @@ namespace Routya.SourceGenerators.Emitters
             // Add concrete Send/SendAsync methods for each request handler
             foreach (var handler in requestHandlers)
             {
-                var requestType = GetTypeName(handler.RequestType);
-                var responseType = GetTypeName(handler.ResponseType!);
+                var requestType = handler.RequestType.ToGeneratedName();
+                var responseType = handler.ResponseType!.ToGeneratedName();
                 
                 if (handler.IsAsync)
                 {
@@ -59,7 +59,7 @@ namespace Routya.SourceGenerators.Emitters
             }
             
             // Add concrete PublishAsync methods for each notification type
-            var notificationGroups = notificationHandlers.GroupBy(h => GetTypeName(h.RequestType));
+            var notificationGroups = notificationHandlers.GroupBy(h => h.RequestType.ToGeneratedName());
             foreach (var group in notificationGroups)
             {
                 var notificationType = group.Key;
@@ -93,13 +93,13 @@ namespace Routya.SourceGenerators.Emitters
                 {
                     var lifetime = GetLifetimeString(handler.Lifetime);
                     var handlerInterface = handler.IsAsync
-                        ? $"IAsyncRequestHandler<{GetTypeName(handler.RequestType)}, {GetTypeName(handler.ResponseType!)}>"
-                        : $"IRequestHandler<{GetTypeName(handler.RequestType)}, {GetTypeName(handler.ResponseType!)}>";
+                        ? $"IAsyncRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>"
+                        : $"IRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>";
                     
                     // Register the concrete handler first
-                    sb.AppendLine($"            services.Add{lifetime}<{GetTypeName(handler.HandlerType)}>();");
+                    sb.AppendLine($"            services.Add{lifetime}<{handler.HandlerType.ToGeneratedName()}>();");
                     // Then register the interface → implementation mapping
-                    sb.AppendLine($"            services.Add{lifetime}<{handlerInterface}>(sp => sp.GetRequiredService<{GetTypeName(handler.HandlerType)}>());");
+                    sb.AppendLine($"            services.Add{lifetime}<{handlerInterface}>(sp => sp.GetRequiredService<{handler.HandlerType.ToGeneratedName()}>());");
                 }
                 sb.AppendLine();
             }
@@ -112,9 +112,9 @@ namespace Routya.SourceGenerators.Emitters
                 {
                     var lifetime = GetLifetimeString(handler.Lifetime);
                     // Register concrete handler first
-                    sb.AppendLine($"            services.Add{lifetime}<{GetTypeName(handler.HandlerType)}>();");
+                    sb.AppendLine($"            services.Add{lifetime}<{handler.HandlerType.ToGeneratedName()}>();");
                     // Then register interface mapping
-                    sb.AppendLine($"            services.Add{lifetime}<INotificationHandler<{GetTypeName(handler.RequestType)}>>(sp => sp.GetRequiredService<{GetTypeName(handler.HandlerType)}>());");
+                    sb.AppendLine($"            services.Add{lifetime}<INotificationHandler<{handler.RequestType.ToGeneratedName()}>>(sp => sp.GetRequiredService<{handler.HandlerType.ToGeneratedName()}>());");
                 }
                 sb.AppendLine();
             }
@@ -131,31 +131,6 @@ namespace Routya.SourceGenerators.Emitters
             sb.AppendLine("}");
 
             return sb.ToString();
-        }
-
-        private static string GetTypeName(Microsoft.CodeAnalysis.INamedTypeSymbol type)
-        {
-            var ns = type.ContainingNamespace?.IsGlobalNamespace == false
-                ? $"{type.ContainingNamespace}."
-                : "";
-            
-            if (type.TypeArguments.Length == 0)
-            {
-                return $"{ns}{type.Name}";
-            }
-
-            // Handle generic types
-            var typeArgs = string.Join(", ", type.TypeArguments.Select(GetTypeName));
-            return $"{ns}{type.Name}<{typeArgs}>";
-        }
-
-        private static string GetTypeName(Microsoft.CodeAnalysis.ITypeSymbol type)
-        {
-            if (type is Microsoft.CodeAnalysis.INamedTypeSymbol namedType)
-            {
-                return GetTypeName(namedType);
-            }
-            return type.Name;
         }
 
         private static string GetLifetimeString(ServiceLifetime lifetime)

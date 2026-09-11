@@ -20,6 +20,15 @@ namespace Routya.SourceGenerators.Generators
         private const string IAsyncRequestHandlerName = "Routya.Core.Abstractions.IAsyncRequestHandler";
         private const string INotificationHandlerName = "Routya.Core.Abstractions.INotificationHandler";
 
+        private static bool IsRequestHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("IRequestHandler", arity: 2);
+
+        private static bool IsAsyncRequestHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("IAsyncRequestHandler", arity: 2);
+
+        private static bool IsNotificationHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("INotificationHandler", arity: 1);
+
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             // Register syntax provider to find potential handler types
@@ -58,10 +67,7 @@ namespace Routya.SourceGenerators.Generators
             var interfaces = symbol.AllInterfaces;
             foreach (var iface in interfaces)
             {
-                var fullName = GetFullTypeName(iface);
-                if (fullName.StartsWith(IRequestHandlerName) ||
-                    fullName.StartsWith(IAsyncRequestHandlerName) ||
-                    fullName.StartsWith(INotificationHandlerName))
+                if (IsRequestHandler(iface) || IsAsyncRequestHandler(iface) || IsNotificationHandler(iface))
                 {
                     return symbol;
                 }
@@ -89,9 +95,7 @@ namespace Routya.SourceGenerators.Generators
 
                 foreach (var iface in handler.AllInterfaces)
                 {
-                    var fullName = GetFullTypeName(iface);
-
-                    if (fullName.StartsWith(IRequestHandlerName))
+                    if (IsRequestHandler(iface))
                     {
                         var descriptor = CreateRequestHandlerDescriptor(handler, iface, isAsync: false);
                         requestHandlers.Add(descriptor);
@@ -103,7 +107,7 @@ namespace Routya.SourceGenerators.Generators
                             handler.Name,
                             descriptor.RequestType.Name));
                     }
-                    else if (fullName.StartsWith(IAsyncRequestHandlerName))
+                    else if (IsAsyncRequestHandler(iface))
                     {
                         var descriptor = CreateRequestHandlerDescriptor(handler, iface, isAsync: true);
                         requestHandlers.Add(descriptor);
@@ -115,7 +119,7 @@ namespace Routya.SourceGenerators.Generators
                             handler.Name,
                             descriptor.RequestType.Name));
                     }
-                    else if (fullName.StartsWith(INotificationHandlerName))
+                    else if (IsNotificationHandler(iface))
                     {
                         var descriptor = CreateNotificationHandlerDescriptor(handler, iface);
                         notificationHandlers.Add(descriptor);
@@ -132,7 +136,7 @@ namespace Routya.SourceGenerators.Generators
 
             // Check for duplicate request handlers
             var duplicates = requestHandlers
-                .GroupBy(h => GetFullTypeName(h.RequestType))
+                .GroupBy(h => h.RequestType.ToGeneratedName())
                 .Where(g => g.Count() > 1)
                 .ToList();
 
@@ -152,7 +156,7 @@ namespace Routya.SourceGenerators.Generators
 
             // Generate the optimized dispatcher
             var notificationGroups = notificationHandlers
-                .GroupBy(h => GetFullTypeName(h.RequestType))
+                .GroupBy(h => h.RequestType.ToGeneratedName())
                 .ToDictionary(g => g.Key, g => g.ToList());
 
             var dispatcherSource = DispatcherEmitter.EmitGeneratedDispatcher(requestHandlers, notificationGroups);
@@ -176,8 +180,8 @@ namespace Routya.SourceGenerators.Generators
             return new HandlerDescriptor
             {
                 HandlerType = handler,
-                RequestType = (INamedTypeSymbol)typeArgs[0],
-                ResponseType = (INamedTypeSymbol)typeArgs[1],
+                RequestType = typeArgs[0],
+                ResponseType = typeArgs[1],
                 IsAsync = isAsync,
                 IsNotification = false,
                 Lifetime = DetectLifetime(handler),
@@ -195,7 +199,7 @@ namespace Routya.SourceGenerators.Generators
             return new HandlerDescriptor
             {
                 HandlerType = handler,
-                RequestType = (INamedTypeSymbol)typeArgs[0],
+                RequestType = typeArgs[0],
                 ResponseType = null,
                 IsAsync = true, // Notification handlers are always async
                 IsNotification = true,
@@ -213,13 +217,5 @@ namespace Routya.SourceGenerators.Generators
             return ServiceLifetime.Transient;
         }
 
-        private static string GetFullTypeName(ISymbol symbol)
-        {
-            if (symbol.ContainingNamespace?.IsGlobalNamespace == false)
-            {
-                return $"{symbol.ContainingNamespace}.{symbol.Name}";
-            }
-            return symbol.Name;
-        }
     }
 }

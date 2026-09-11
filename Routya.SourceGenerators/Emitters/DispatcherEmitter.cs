@@ -1,4 +1,4 @@
-using Routya.SourceGenerators.Models;
+﻿using Routya.SourceGenerators.Models;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -66,8 +66,8 @@ internal static class DispatcherEmitter
 
     private static void EmitRequestDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
     {
-        var requestTypeName = GetFullTypeName(handler.RequestType);
-        var responseTypeName = GetFullTypeName(handler.ResponseType!);
+        var requestTypeName = handler.RequestType.ToGeneratedName();
+        var responseTypeName = handler.ResponseType!.ToGeneratedName();
         
         sb.AppendLine("        /// <summary>");
         sb.AppendLine($"        /// Optimized dispatch for {requestTypeName}.");
@@ -164,42 +164,4 @@ internal static class DispatcherEmitter
     {
     }
 
-    private static string GetFullTypeName(Microsoft.CodeAnalysis.INamedTypeSymbol symbol)
-    {
-        var sb = new StringBuilder();
-        
-        // Get namespace prefix
-        if (symbol.ContainingNamespace?.IsGlobalNamespace == false)
-        {
-            sb.Append(symbol.ContainingNamespace);
-            sb.Append('.');
-        }
-        
-        // Get type name
-        sb.Append(symbol.Name);
-        
-        // Handle generic types
-        if (symbol.IsGenericType && symbol.TypeArguments.Length > 0)
-        {
-            sb.Append('<');
-            for (int i = 0; i < symbol.TypeArguments.Length; i++)
-            {
-                if (i > 0)
-                    sb.Append(", ");
-                    
-                if (symbol.TypeArguments[i] is Microsoft.CodeAnalysis.INamedTypeSymbol namedTypeArg)
-                {
-                    sb.Append(GetFullTypeName(namedTypeArg));
-                }
-                else
-                {
-                    // Handle other type arguments (type parameters, arrays, etc.)
-                    sb.Append(symbol.TypeArguments[i].ToDisplayString());
-                }
-            }
-            sb.Append('>');
-        }
-        
-        return sb.ToString();
-    }
 }
