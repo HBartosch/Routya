@@ -29,6 +29,16 @@ namespace Routya.SourceGenerators.Models
 
         public bool IsAsync { get; set; }
         public bool IsNotification { get; set; }
+
+        /// <summary>
+        /// Whether a typed member can be generated for this handler on the public IGeneratedRoutya
+        /// interface and dispatcher. False when the request or response type is not externally
+        /// visible, because a public signature cannot mention it. The handler is still registered,
+        /// so it remains reachable through runtime IRoutya dispatch.
+        /// </summary>
+        public bool SupportsTypedDispatch
+            => RequestType.IsExternallyVisible()
+               && (ResponseType == null || ResponseType.IsExternallyVisible());
         public ServiceLifetime Lifetime { get; set; } = ServiceLifetime.Transient;
         public string HandlerInterfaceName { get; set; } = null!;
 

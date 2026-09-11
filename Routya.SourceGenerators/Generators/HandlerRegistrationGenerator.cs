@@ -49,18 +49,23 @@ namespace Routya.SourceGenerators.Generators
 
         private static bool IsPotentialHandlerClass(SyntaxNode node)
         {
-            // Look for class declarations with base types or interfaces
-            return node is ClassDeclarationSyntax classDecl &&
-                   classDecl.BaseList is not null &&
-                   classDecl.BaseList.Types.Count > 0;
+            // TypeDeclarationSyntax rather than ClassDeclarationSyntax, so that a handler declared
+            // as a record or a struct is considered too. Interfaces are excluded below by IsAbstract.
+            return node is TypeDeclarationSyntax typeDecl &&
+                   typeDecl.BaseList is not null &&
+                   typeDecl.BaseList.Types.Count > 0;
         }
 
         private static INamedTypeSymbol? GetSemanticTargetForGeneration(GeneratorSyntaxContext context)
         {
-            var classDeclaration = (ClassDeclarationSyntax)context.Node;
-            var symbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
-            
-            if (symbol is null || symbol.IsAbstract || symbol.DeclaredAccessibility != Accessibility.Public)
+            var typeDeclaration = (TypeDeclarationSyntax)context.Node;
+            var symbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration);
+
+            // Accessibility is deliberately not filtered here. An internal handler is registered and
+            // dispatched from inside generated method bodies in the same assembly, so it works, and
+            // "internal sealed class Handler" is a common convention. Whether a typed member can be
+            // generated for it is decided later, by HandlerDescriptor.SupportsTypedDispatch.
+            if (symbol is null || symbol.IsAbstract)
                 return null;
 
             // Check if it implements any handler interfaces
@@ -150,16 +155,39 @@ namespace Routya.SourceGenerators.Generators
                     handlerNames));
             }
 
-            // Generate the registration code
+            // Tell the user about any handler that is registered but gets no typed member, rather
+            // than leaving its absence from IGeneratedRoutya unexplained.
+            foreach (var handler in requestHandlers.Concat(notificationHandlers))
+            {
+                if (handler.SupportsTypedDispatch)
+                    continue;
+
+                var inaccessibleType = handler.RequestType.IsExternallyVisible()
+                    ? handler.ResponseType!
+                    : handler.RequestType;
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.TypedDispatchNotGenerated,
+                    handler.HandlerType.Locations.FirstOrDefault() ?? Location.None,
+                    handler.HandlerType.Name,
+                    inaccessibleType.ToDisplayString()));
+            }
+
+            // Generate the registration code. Every discovered handler is registered, including
+            // those without a typed member.
             var source = HandlerRegistrationEmitter.Generate(requestHandlers, notificationHandlers);
             context.AddSource("RoutyaGenerated.Registration.g.cs", source);
 
-            // Generate the optimized dispatcher
+            // Generate the optimized dispatcher. Only handlers whose types can appear in a public
+            // signature get a typed method.
             var notificationGroups = notificationHandlers
+                .Where(h => h.SupportsTypedDispatch)
                 .GroupBy(h => h.RequestType.ToGeneratedName())
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var dispatcherSource = DispatcherEmitter.EmitGeneratedDispatcher(requestHandlers, notificationGroups);
+            var dispatcherSource = DispatcherEmitter.EmitGeneratedDispatcher(
+                requestHandlers.Where(h => h.SupportsTypedDispatch).ToList(),
+                notificationGroups);
             context.AddSource("RoutyaGenerated.Dispatcher.g.cs", dispatcherSource);
 
             context.ReportDiagnostic(Diagnostic.Create(

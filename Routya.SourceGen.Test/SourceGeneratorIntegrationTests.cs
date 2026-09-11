@@ -147,6 +147,25 @@ public class SourceGeneratorIntegrationTests
         Assert.NotEmpty(tracker.Calls);
     }
 
+    // ── Internal handlers ────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddGeneratedRoutya_Registers_An_Internal_Handler()
+    {
+        var provider = BuildProvider();
+        var handler = provider.GetService<IAsyncRequestHandler<ArchiveOrderCommand, bool>>();
+        Assert.NotNull(handler);
+    }
+
+    [Fact]
+    public async Task SendAsync_Dispatches_To_An_Internal_Handler()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+
+        Assert.True(await routya.SendAsync(new ArchiveOrderCommand(1)));
+        Assert.False(await routya.SendAsync(new ArchiveOrderCommand(0)));
+    }
+
     // ── Pipeline behavior ────────────────────────────────────────────────────
 
     [Fact]

@@ -27,6 +27,18 @@ public class CalculateTotalHandler : IRequestHandler<CalculateTotalRequest, deci
     public decimal Handle(CalculateTotalRequest request) => request.Quantity * request.UnitPrice;
 }
 
+// ── Internal handler with a public request ──────────────────────────────────
+// The Clean Architecture convention: the request is part of the public contract, the handler is
+// an implementation detail. The generator must still discover and register it.
+
+public record ArchiveOrderCommand(int OrderId) : IRequest<bool>;
+
+internal sealed class ArchiveOrderHandler : IAsyncRequestHandler<ArchiveOrderCommand, bool>
+{
+    public Task<bool> HandleAsync(ArchiveOrderCommand request, CancellationToken cancellationToken)
+        => Task.FromResult(request.OrderId > 0);
+}
+
 // ── Notification ────────────────────────────────────────────────────────────
 
 public class ProductCreatedNotification : INotification

@@ -41,5 +41,57 @@ namespace Routya.SourceGenerators
                && candidate.ContainingNamespace?.ToDisplayString() == RoutyaAbstractionsNamespace;
 
         public const string RoutyaAbstractionsNamespace = "Routya.Core.Abstractions";
+
+        /// <summary>
+        /// Determines whether a type may appear in the signature of a public member.
+        /// </summary>
+        /// <remarks>
+        /// The generated interface and dispatcher are public, so a type that is not externally
+        /// visible cannot appear in their signatures without CS0051 or CS0050. Accessibility of a
+        /// nested type depends on every containing type, and of a constructed generic on every type
+        /// argument, so both are walked here.
+        /// </remarks>
+        public static bool IsExternallyVisible(this ITypeSymbol type)
+        {
+            switch (type)
+            {
+                case IArrayTypeSymbol array:
+                    return array.ElementType.IsExternallyVisible();
+
+                case IPointerTypeSymbol pointer:
+                    return pointer.PointedAtType.IsExternallyVisible();
+
+                // A type parameter's visibility is governed by the member that declares it
+                case ITypeParameterSymbol _:
+                    return true;
+
+                case INamedTypeSymbol named:
+                    for (var containing = named; containing != null; containing = containing.ContainingType)
+                    {
+                        if (!IsPubliclyAccessible(containing.DeclaredAccessibility))
+                        {
+                            return false;
+                        }
+                    }
+
+                    foreach (var argument in named.TypeArguments)
+                    {
+                        if (!argument.IsExternallyVisible())
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+
+                default:
+                    return IsPubliclyAccessible(type.DeclaredAccessibility);
+            }
+        }
+
+        private static bool IsPubliclyAccessible(Accessibility accessibility)
+            // NotApplicable covers the special types, such as the ones behind the int and string
+            // keywords, which carry no declared accessibility of their own.
+            => accessibility == Accessibility.Public || accessibility == Accessibility.NotApplicable;
     }
 }

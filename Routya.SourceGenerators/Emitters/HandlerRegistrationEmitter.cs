@@ -37,8 +37,10 @@ namespace Routya.SourceGenerators.Emitters
             sb.AppendLine("    public interface IGeneratedRoutya");
             sb.AppendLine("    {");
             
-            // Add concrete Send/SendAsync methods for each request handler
-            foreach (var handler in requestHandlers)
+            // Add concrete Send/SendAsync methods for each request handler. Handlers whose request
+            // or response type is not externally visible are skipped, because this interface is
+            // public and cannot mention them. They are still registered further down.
+            foreach (var handler in requestHandlers.Where(h => h.SupportsTypedDispatch))
             {
                 var requestType = handler.RequestType.ToGeneratedName();
                 var responseType = handler.ResponseType!.ToGeneratedName();
@@ -59,7 +61,9 @@ namespace Routya.SourceGenerators.Emitters
             }
             
             // Add concrete PublishAsync methods for each notification type
-            var notificationGroups = notificationHandlers.GroupBy(h => h.RequestType.ToGeneratedName());
+            var notificationGroups = notificationHandlers
+                .Where(h => h.SupportsTypedDispatch)
+                .GroupBy(h => h.RequestType.ToGeneratedName());
             foreach (var group in notificationGroups)
             {
                 var notificationType = group.Key;
