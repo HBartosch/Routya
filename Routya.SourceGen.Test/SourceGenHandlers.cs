@@ -16,6 +16,17 @@ public class GetProductHandler : IAsyncRequestHandler<GetProductRequest, Product
         => Task.FromResult(new Product(request.Id, $"Product_{request.Id}"));
 }
 
+// ── Synchronous request / response ──────────────────────────────────────────
+// Implements IRequestHandler rather than IAsyncRequestHandler, so the generator emits a
+// synchronous Send member for it rather than SendAsync.
+
+public record CalculateTotalRequest(int Quantity, decimal UnitPrice) : IRequest<decimal>;
+
+public class CalculateTotalHandler : IRequestHandler<CalculateTotalRequest, decimal>
+{
+    public decimal Handle(CalculateTotalRequest request) => request.Quantity * request.UnitPrice;
+}
+
 // ── Notification ────────────────────────────────────────────────────────────
 
 public class ProductCreatedNotification : INotification

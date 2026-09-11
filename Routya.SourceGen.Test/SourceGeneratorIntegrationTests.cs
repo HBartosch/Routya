@@ -110,6 +110,43 @@ public class SourceGeneratorIntegrationTests
         Assert.Equal(1, tracker.Calls.Count(c => c == nameof(AuditHandler)));
     }
 
+    // ── Synchronous dispatch ─────────────────────────────────────────────────
+
+    [Fact]
+    public void AddGeneratedRoutya_Registers_Sync_Request_Handler()
+    {
+        var provider = BuildProvider();
+        var handler = provider.GetService<IRequestHandler<CalculateTotalRequest, decimal>>();
+        Assert.NotNull(handler);
+        Assert.IsType<CalculateTotalHandler>(handler);
+    }
+
+    [Fact]
+    public void Send_Dispatches_To_Sync_Handler_And_Returns_Correct_Response()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+
+        var result = routya.Send(new CalculateTotalRequest(3, 9.99m));
+
+        Assert.Equal(29.97m, result);
+    }
+
+    [Fact]
+    public void Send_Runs_Pipeline_Behaviors_Around_A_Sync_Handler()
+    {
+        var tracker = new HandlerCallTracker();
+        var services = new ServiceCollection();
+        services.AddSingleton(tracker);
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TrackingBehavior<,>));
+        services.AddGeneratedRoutya();
+        var routya = services.BuildServiceProvider().GetRequiredService<IGeneratedRoutya>();
+
+        var result = routya.Send(new CalculateTotalRequest(2, 5m));
+
+        Assert.Equal(10m, result);
+        Assert.NotEmpty(tracker.Calls);
+    }
+
     // ── Pipeline behavior ────────────────────────────────────────────────────
 
     [Fact]
