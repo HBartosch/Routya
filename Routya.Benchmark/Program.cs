@@ -11,7 +11,7 @@ namespace Routya.Benchmark;
 
 internal class Program
 {
-    public static void Main() => BenchmarkRunner.Run<DispatcherBenchmarks>();
+    public static void Main(string[] args) => BenchmarkRunner.Run<DispatcherBenchmarks>(args: args);
 }
 
 [MemoryDiagnoser]
@@ -25,6 +25,7 @@ public class DispatcherBenchmarks
     private IServiceProvider _providerSingleton;
     private IServiceProvider _providerScoped;
     private IServiceProvider _providerTransient;
+    private IServiceProvider _providerScopedBehaviors;
 
     [GlobalSetup]
     public void Setup()
@@ -82,6 +83,19 @@ public class DispatcherBenchmarks
         });
         _providerTransient = servicesTransient.BuildServiceProvider();
 
+        // Scoped pipeline behaviors with Singleton handlers. Isolates the cost of resolving
+        // behaviors from the dispatch scope on every dispatch, which the other providers do not
+        // cover because they register their behaviors as Singleton.
+        var servicesScopedBehaviors = new ServiceCollection();
+        servicesScopedBehaviors.AddRoutya(cfg =>
+        {
+            cfg.Scope = RoutyaDispatchScope.Scoped;
+            cfg.HandlerLifetime = ServiceLifetime.Singleton;
+        }, Assembly.GetExecutingAssembly());
+        servicesScopedBehaviors.AddScoped(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        servicesScopedBehaviors.AddScoped(typeof(Routya.Core.Abstractions.IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        _providerScopedBehaviors = servicesScopedBehaviors.BuildServiceProvider();
+
         _request = new HelloRequest("Benchmark");
     }
 
@@ -131,6 +145,22 @@ public class DispatcherBenchmarks
         using var scope = _providerTransient.CreateScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
         return dispatcher.Send<HelloRequest, string>(_request);
+    }
+
+    [Benchmark]
+    public string Routya_ScopedBehaviors_Send()
+    {
+        using var scope = _providerScopedBehaviors.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
+        return dispatcher.Send<HelloRequest, string>(_request);
+    }
+
+    [Benchmark]
+    public Task<string> Routya_ScopedBehaviors_SendAsync()
+    {
+        using var scope = _providerScopedBehaviors.CreateScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IRoutya>();
+        return dispatcher.SendAsync<HelloRequest, string>(_request);
     }
 
     [Benchmark]
