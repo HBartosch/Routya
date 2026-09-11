@@ -22,6 +22,10 @@ namespace Routya.Core.Dispatchers.Requests
         private readonly RoutyaDispatcherOptions _options;
         private readonly System.Collections.Generic.Dictionary<Type, RequestHandlerInfo> _requestHandlerRegistry;
 
+        // Owned per dispatcher, and therefore per DI container, so that no pipeline state is
+        // shared between containers living in the same process.
+        private readonly CompiledPipelineFactory _pipelineFactory;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="CompiledRequestInvokerDispatcher"/> class.
         /// </summary>
@@ -36,13 +40,14 @@ namespace Routya.Core.Dispatchers.Requests
             _provider = provider;
             _requestHandlerRegistry = requestHandlerRegistry;
             _options = options ?? new RoutyaDispatcherOptions();
+            _pipelineFactory = new CompiledPipelineFactory(requestHandlerRegistry);
         }
 
         /// <inheritdoc />
         public TResponse Send<TRequest, TResponse>(TRequest request)
             where TRequest : IRequest<TResponse>
         {
-            var pipeline = CompiledPipelineFactory.GetOrAddSync<TRequest, TResponse>(_requestHandlerRegistry);
+            var pipeline = _pipelineFactory.GetOrAddSync<TRequest, TResponse>();
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {
@@ -57,7 +62,7 @@ namespace Routya.Core.Dispatchers.Requests
         public async Task<TResponse> SendAsync<TRequest, TResponse>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest<TResponse>
         {
-            var pipeline = CompiledPipelineFactory.GetOrAdd<TRequest, TResponse>(_requestHandlerRegistry);
+            var pipeline = _pipelineFactory.GetOrAdd<TRequest, TResponse>();
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {
