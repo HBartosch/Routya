@@ -437,6 +437,29 @@ namespace Routya.Core.Extensions
             return services;
         }
 
+        /// <summary>
+        /// Returns the types in an assembly that could be loaded.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Assembly.GetTypes"/> throws <see cref="ReflectionTypeLoadException"/> when any
+        /// type fails to load, which happens whenever a scanned assembly references something that
+        /// is not deployed, such as an optional provider package. Letting that escape turns a
+        /// partially loadable assembly into a startup failure, even when every Routya handler in it
+        /// loaded perfectly well. The exception carries the types that did load, so scanning
+        /// continues with those.
+        /// </remarks>
+        private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                return ex.Types.Where(t => t != null)!;
+            }
+        }
+
         private static void RegisterRoutyaHandlersFromAssembly(
             IServiceCollection services, 
             Assembly assembly, 
@@ -444,7 +467,7 @@ namespace Routya.Core.Extensions
             Dictionary<Type, List<NotificationHandlerInfo>> notificationHandlerRegistry,
             Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
         {
-            var allTypes = assembly.GetTypes().Where(t => !t.IsAbstract && !t.IsInterface);
+            var allTypes = GetLoadableTypes(assembly).Where(t => !t.IsAbstract && !t.IsInterface);
 
             foreach (var type in allTypes)
             {
