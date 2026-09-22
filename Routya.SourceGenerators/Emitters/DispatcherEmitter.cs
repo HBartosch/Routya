@@ -197,17 +197,13 @@ internal static class DispatcherEmitter
         {
             sb.AppendLine($"            await handler0.Handle(notification, cancellationToken).ConfigureAwait(false);");
         }
-        else if (handlers.Count == 2)
-        {
-            // Special case for 2 handlers: parallel execution without Task.WhenAll allocation
-            sb.AppendLine("            var task0 = handler0.Handle(notification, cancellationToken);");
-            sb.AppendLine("            var task1 = handler1.Handle(notification, cancellationToken);");
-            sb.AppendLine("            await task0.ConfigureAwait(false);");
-            sb.AppendLine("            await task1.ConfigureAwait(false);");
-        }
         else
         {
-            // For 3+ handlers, use Task.WhenAll (small allocation acceptable for many handlers)
+            // Task.WhenAll for every count above one, including two. Starting both tasks and then
+            // awaiting them one after another looks equivalent, but it is not: if the first task
+            // faults, the await rethrows immediately and the second task is never awaited. Its
+            // exception then goes unobserved, and the caller resumes while it is still running.
+            // Task.WhenAll observes every task and waits for all of them before propagating.
             sb.AppendLine("            await Task.WhenAll(");
             for (int i = 0; i < handlers.Count; i++)
             {

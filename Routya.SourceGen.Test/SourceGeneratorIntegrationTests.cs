@@ -147,6 +147,22 @@ public class SourceGeneratorIntegrationTests
         Assert.NotEmpty(tracker.Calls);
     }
 
+    // ── Fan out when a handler faults ────────────────────────────────────────
+
+    [Fact]
+    public async Task PublishAsync_Waits_For_Every_Handler_Even_When_One_Faults()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+        FanOutSlowHandler.Completed = false;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => routya.PublishAsync(new FanOutFailureNotification()));
+
+        Assert.True(
+            FanOutSlowHandler.Completed,
+            "A faulting handler must not let the publish return while another handler is still running.");
+    }
+
     // ── Internal handlers ────────────────────────────────────────────────────
 
     [Fact]

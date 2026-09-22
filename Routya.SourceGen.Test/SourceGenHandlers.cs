@@ -72,6 +72,34 @@ public class AuditHandler : INotificationHandler<ProductCreatedNotification>
     }
 }
 
+// ── Notification fan out where one handler faults ───────────────────────────
+// Exactly two handlers, which is the count the emitter used to special case by starting both
+// tasks and then awaiting them one after another.
+
+public class FanOutFailureNotification : INotification { }
+
+public class FanOutThrowingHandler : INotificationHandler<FanOutFailureNotification>
+{
+    // Faults asynchronously rather than throwing synchronously, so that both handlers are
+    // actually started and the test exercises how their tasks are awaited.
+    public async Task Handle(FanOutFailureNotification notification, CancellationToken cancellationToken = default)
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("handler failed");
+    }
+}
+
+public class FanOutSlowHandler : INotificationHandler<FanOutFailureNotification>
+{
+    public static bool Completed { get; set; }
+
+    public async Task Handle(FanOutFailureNotification notification, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(75, CancellationToken.None);
+        Completed = true;
+    }
+}
+
 // ── Test infrastructure ─────────────────────────────────────────────────────
 
 /// <summary>Singleton injected into handlers so tests can observe invocations.</summary>
