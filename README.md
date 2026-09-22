@@ -250,7 +250,7 @@ This ensures:
 # Requests
 
 ### 📊 Benchmark Results (.NET 8 - November 2025)
-Benchmarks comparing Routya against MediatR 13.1.0 with simple request handlers (BenchmarkDotNet v0.14.0)
+Benchmarks comparing Routya against MediatR 12.5.0 with simple request handlers (BenchmarkDotNet v0.14.0)
 
 **Test Environment:**
 - CPU: 11th Gen Intel Core i7-11800H @ 2.30GHz (8 cores, 16 logical processors)
@@ -356,7 +356,7 @@ In the following example the LoggingBehavior will write to console before your r
 # Notifications
 
 ### 📊 Notification Dispatching Performance
-Benchmarks comparing Routya against MediatR 13.1.0 for notification patterns (BenchmarkDotNet v0.14.0)
+Benchmarks comparing Routya against MediatR 12.5.0 for notification patterns (BenchmarkDotNet v0.14.0)
 
 | Method                      | Mean     | Ratio | Gen0   | Allocated | Notes |
 |---------------------------- |---------:|------:|-------:|----------:|-------|
