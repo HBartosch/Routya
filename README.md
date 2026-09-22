@@ -198,22 +198,22 @@ builder.Services.AddRoutyaNotificationHandler<UserRegisteredNotification, LogAud
 - ✅ **Flexible lifetimes** - Choose Singleton/Scoped/Transient per handler
 
 ### Option 3: Traditional DI Registration (Still Supported)
-You can also use standard DI registration - works with auto-caching fallback:
+You can also use standard DI registration - these handlers are resolved through the container on each dispatch:
 
 ```C#
 // Register Routya core services (no assembly scanning)
 builder.Services.AddRoutya();
 
-// Traditional DI registration (automatically cached to registry on first use)
+// Traditional DI registration
 builder.Services.AddSingleton<IAsyncRequestHandler<CreateProductRequest, Product>, CreateProductHandler>();
 builder.Services.AddScoped<IAsyncRequestHandler<GetProductRequest, Product?>, GetProductHandler>();
 builder.Services.AddTransient<IAsyncRequestHandler<GetAllProductsRequest, List<Product>>, GetAllProductsHandler>();
 
-// Notification handlers (automatically cached on first publish)
+// Notification handlers
 builder.Services.AddSingleton<INotificationHandler<UserRegisteredNotification>, SendEmailHandler>();
 ```
 
-**Trade-off**: First call uses standard DI resolution (~5-10% slower), subsequent calls automatically use optimized registry.
+**Trade-off**: handlers registered this way are resolved through the container on every dispatch, so they do not get the registry's direct resolution. Use the `AddRoutya*Handler` methods above, or assembly scanning, if you want that.
 
 **Performance Comparison:**
 - **Singleton**: ~380 ns (2% slower than MediatR, 50% less memory, best for stateless handlers)
@@ -225,7 +225,7 @@ Routya lets YOU choose the right lifetime per handler:
 - 🔄 **Scoped** for handlers with DbContext = safe with proper scope management  
 - 🔒 **Transient** when you need maximum isolation = new instance every time
 
-### Backward Compatibility & Auto-Registry
+### Backward Compatibility
 Routya maintains full backward compatibility with traditional DI registration:
 
 ```C#
@@ -234,18 +234,21 @@ builder.Services.AddScoped<IAsyncRequestHandler<MyRequest, MyResponse>, MyHandle
 builder.Services.AddScoped<INotificationHandler<MyNotification>, MyNotificationHandler>();
 ```
 
-**Smart Fallback with Auto-Caching:**
-When handlers aren't found in the registry, Routya automatically:
-1. Falls back to `GetService/GetServices` resolution (first call)
-2. **Adds discovered handlers to the registry** (automatic optimization!)
-3. Uses fast registry-based dispatch for all subsequent calls
+**How these are dispatched:**
+Handlers registered this way are not described in Routya's registry, so Routya resolves them through
+their interface on every dispatch, from the current dispatch scope. That is the same work any
+container does, and it is required for correctness: registering `IAsyncRequestHandler<,>` against an
+implementation does not register the implementation type, and a `Scoped` handler must be built once
+per scope rather than reused.
 
 This ensures:
-- ✅ **First call**: Fallback resolution (~same speed as traditional)
-- ✅ **Second+ calls**: Registry-optimized dispatch (~28% faster for notifications!)
 - ✅ Smooth migration path from older versions
 - ✅ Works with existing code without changes
-- ✅ Automatic performance improvement after first use
+- ✅ Correct behaviour for `Scoped` handlers and handlers holding scoped dependencies
+
+**If you want the registry's faster path**, register through `AddRoutyaRequestHandler`,
+`AddRoutyaAsyncRequestHandler`, `AddRoutyaNotificationHandler`, or assembly scanning. Those record
+the concrete type and lifetime up front, which lets Routya resolve the handler directly.
 
 # Requests
 
@@ -272,7 +275,7 @@ Benchmarks comparing Routya against MediatR 12.5.0 with simple request handlers 
 
 **Key Highlights:**
 - ✅ **Singleton/Transient Send handlers are 9-10% faster than MediatR!** 🚀
-- ✅ **Registry-based dispatch** with auto-caching fallback
+- ✅ **Registry-based dispatch** for handlers registered through `AddRoutya*Handler` or assembly scanning
 - ✅ **Zero memory leaks** with proper scope disposal
 - ✅ **Fast-path optimization** when no behaviors configured
 - 🎯 **Configurable handler lifetimes** (Singleton/Scoped/Transient)
@@ -371,7 +374,7 @@ Benchmarks comparing Routya against MediatR 12.5.0 for notification patterns (Be
 **Key Highlights:**
 - ✅ **Singleton sequential: 30% faster than MediatR with 56% less memory** (192B vs 440B) 🚀
 - ✅ **Transient sequential: 7% faster with 45% less memory** (240B vs 440B)
-- ✅ **Registry-based dispatch with auto-caching** - Zero GetServices calls after first use
+- ✅ **Registry-based dispatch** - no `GetServices` call for handlers described in the registry
 - ✅ **Parallel dispatching** available with minimal overhead
 - ✅ **Flexible lifetime management** for different use cases
 

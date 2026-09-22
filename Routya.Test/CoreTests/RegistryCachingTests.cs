@@ -11,26 +11,24 @@ namespace Routya.Test.CoreTests
     public class RegistryCachingTests
     {
         [Fact]
-        public async Task Request_FallbackHandler_ShouldBeAddedToRegistry_AfterFirstCall()
+        public async Task Request_HandlerOutsideTheRegistry_ShouldBeResolved_OnEveryCall()
         {
             // Arrange
             var services = new ServiceCollection();
-            
+
             // Register Routya WITHOUT assembly scanning (empty registry)
             services.AddRoutya();
-            
-            // Register handler using traditional DI (not in registry initially)
+
+            // Register handler using traditional DI (not in the registry)
             services.AddScoped<IAsyncRequestHandler<TestRequest, string>, TestRequestHandler>();
-            
-            var provider = services.BuildServiceProvider();
+
+            var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             var dispatcher = provider.GetRequiredService<IRoutya>();
-            
-            // Act - First call uses fallback
+
+            // Act - handlers outside the registry are resolved through their interface every call
             var result1 = await dispatcher.SendAsync<TestRequest, string>(new TestRequest { Value = "First" });
-            
-            // Act - Second call should use registry (handler was cached after first call)
             var result2 = await dispatcher.SendAsync<TestRequest, string>(new TestRequest { Value = "Second" });
-            
+
             // Assert
             Assert.Equal("Handler processed: First", result1);
             Assert.Equal("Handler processed: Second", result2);

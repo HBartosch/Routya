@@ -85,9 +85,6 @@ namespace Routya.Core.Dispatchers.Pipelines
                 requestHandlerRegistry.TryGetValue(syncHandlerType, out syncHandlerInfo);
             }
             
-            // Track if we need to populate registry from fallback on first call
-            bool needsFallbackCheck = asyncHandlerInfo == null && syncHandlerInfo == null;
-            
             return (provider, request, cancellationToken) =>
             {
                 // Resolve handler
@@ -100,22 +97,6 @@ namespace Routya.Core.Dispatchers.Pipelines
                 else
                 {
                     asyncHandler = provider.GetService<IAsyncRequestHandler<TRequest, TResponse>>();
-                    
-                    if (asyncHandler != null && needsFallbackCheck)
-                    {
-                        var handlerConcreteType = asyncHandler.GetType();
-                        lock (requestHandlerRegistry)
-                        {
-                            if (!requestHandlerRegistry.ContainsKey(asyncHandlerType))
-                            {
-                                requestHandlerRegistry[asyncHandlerType] = new RequestHandlerInfo
-                                {
-                                    ConcreteType = handlerConcreteType,
-                                    Lifetime = ServiceLifetime.Transient
-                                };
-                            }
-                        }
-                    }
                 }
                 
                 if (asyncHandler != null)
@@ -148,21 +129,6 @@ namespace Routya.Core.Dispatchers.Pipelines
                         throw new InvalidOperationException($"No handler found for request type {typeof(TRequest).Name}");
                     }
                     
-                    if (needsFallbackCheck)
-                    {
-                        var handlerConcreteType = syncHandler.GetType();
-                        lock (requestHandlerRegistry)
-                        {
-                            if (!requestHandlerRegistry.ContainsKey(syncHandlerType))
-                            {
-                                requestHandlerRegistry[syncHandlerType] = new RequestHandlerInfo
-                                {
-                                    ConcreteType = handlerConcreteType,
-                                    Lifetime = ServiceLifetime.Transient
-                                };
-                            }
-                        }
-                    }
                 }
                 
                 var syncBehaviors = ResolveBehaviors<TRequest, TResponse>(provider);
@@ -277,9 +243,6 @@ namespace Routya.Core.Dispatchers.Pipelines
             // Check registry for handler info
             requestHandlerRegistry.TryGetValue(handlerType, out var handlerInfo);
             
-            // Track if we need to populate registry from fallback on first call
-            bool needsFallbackCheck = handlerInfo == null;
-            
             return (provider, request) =>
             {
                 IRequestHandler<TRequest, TResponse>? handler;
@@ -299,25 +262,6 @@ namespace Routya.Core.Dispatchers.Pipelines
                         throw new InvalidOperationException($"No handler found for request type {typeof(TRequest).Name}");
                     }
                     
-                    // If found via fallback, add to registry for future optimization
-                    if (needsFallbackCheck)
-                    {
-                        var handlerConcreteType = handler.GetType();
-                        var lifetime = ServiceLifetime.Transient; // Default fallback lifetime
-                        
-                        lock (requestHandlerRegistry)
-                        {
-                            // Double-check it wasn't added by another thread
-                            if (!requestHandlerRegistry.ContainsKey(handlerType))
-                            {
-                                requestHandlerRegistry[handlerType] = new RequestHandlerInfo
-                                {
-                                    ConcreteType = handlerConcreteType,
-                                    Lifetime = lifetime
-                                };
-                            }
-                        }
-                    }
                 }
                 
                 // Resolve behaviors from the current dispatch scope, never from a cache
