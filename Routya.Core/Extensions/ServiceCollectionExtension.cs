@@ -55,18 +55,17 @@ namespace Routya.Core.Extensions
     public static class ServiceCollectionExtension
     {
         /// <summary>
-        /// Registers Routya core services and optionally scans assemblies for request and notification handlers.
+        /// Registers Routya core services. Handlers are registered separately, which keeps this
+        /// overload free of reflection and therefore usable under trimming and Native AOT.
         /// </summary>
         /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
         /// <param name="configure">Optional configuration action to customize <see cref="RoutyaDispatcherOptions"/>.</param>
-        /// <param name="scanAssemblies">Optional assemblies to scan for <see cref="IRequestHandler{TRequest, TResponse}"/>, 
-        /// <see cref="IAsyncRequestHandler{TRequest, TResponse}"/>, and <see cref="INotificationHandler{TNotification}"/> implementations.</param>
         /// <returns>The <see cref="IServiceCollection"/> for method chaining.</returns>
         /// <remarks>
         /// <para>This method registers the core Routya dispatcher services and builds an optimized handler registry for fast dispatch.</para>
         /// <para>
-        /// When <paramref name="scanAssemblies"/> are provided, all handler implementations are automatically registered with the specified 
-        /// <see cref="RoutyaDispatcherOptions.HandlerLifetime"/> (defaults to Scoped).
+        /// To discover handlers by scanning assemblies instead, use the overload that takes
+        /// assemblies. That overload uses reflection and is not compatible with trimming or Native AOT.
         /// </para>
         /// <para>
         /// <b>Performance Tip:</b> For optimal performance, use the specialized registration methods instead of assembly scanning:

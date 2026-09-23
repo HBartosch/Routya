@@ -25,8 +25,6 @@ namespace System.Diagnostics.CodeAnalysis
         }
 
         public string Message { get; }
-
-        public string Url { get; set; }
     }
 
     /// <summary>
