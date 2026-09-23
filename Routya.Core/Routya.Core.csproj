@@ -26,6 +26,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!--
+    Runs the trimming and AOT analyzers on the .NET targets, so that a change which breaks
+    trimming or Native AOT compatibility fails the build here rather than in a consumer's
+    published application. Not applicable to the netstandard targets, which predate the analyzers.
+  -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0' or '$(TargetFramework)' == 'net9.0' or '$(TargetFramework)' == 'net10.0'">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4" />
   </ItemGroup>
