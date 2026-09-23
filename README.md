@@ -215,10 +215,10 @@ builder.Services.AddSingleton<INotificationHandler<UserRegisteredNotification>, 
 
 **Trade-off**: handlers registered this way are resolved through the container on every dispatch, so they do not get the registry's direct resolution. Use the `AddRoutya*Handler` methods above, or assembly scanning, if you want that.
 
-**Performance Comparison:**
-- **Singleton**: ~380 ns (2% slower than MediatR, 50% less memory, best for stateless handlers)
-- **Transient**: ~384 ns (3% slower than MediatR, matches memory, maximum isolation)  
-- **Scoped**: ~440 ns (18% overhead, safe for DbContext and scoped dependencies)
+**Performance Comparison** (memory figures are deterministic; timings are indicative):
+- **Singleton**: 808 B per dispatch, 20% less than MediatR, best for stateless handlers
+- **Transient**: 832 B per dispatch, 18% less than MediatR, maximum isolation
+- **Scoped**: 1016 B per dispatch, matching MediatR, safe for DbContext and scoped dependencies
 
 Routya lets YOU choose the right lifetime per handler:
 - 🚀 **Singleton** for stateless handlers = fastest, least memory
@@ -266,12 +266,21 @@ Benchmarks comparing Routya against MediatR 12.5.0 with simple request handlers 
 | Method                     | Mean     | Ratio | Gen0   | Allocated | Notes |
 |--------------------------- |---------:|------:|-------:|----------:|-------|
 | MediatR_SendAsync          | 369.3 ns |  1.00 | 0.0038 |    1016 B | Baseline |
-| **Routya_Singleton_Send**      | **333.9 ns** |  **0.90** | 0.0038 |    1008 B | ⚡ **10% faster!** |
-| **Routya_Transient_Send**      | **336.0 ns** |  **0.91** | 0.0038 |    1032 B | ⚡ **9% faster!** |
-| Routya_Singleton_SendAsync | 397.7 ns |  1.08 | 0.0048 |    1168 B | 8% overhead for async |
-| Routya_Scoped_Send         | 395.5 ns |  1.07 | 0.0048 |    1216 B | Scoped DI overhead |
-| Routya_Transient_SendAsync | 418.0 ns |  1.13 | 0.0048 |    1192 B | 13% overhead for async |
-| Routya_Scoped_SendAsync    | 476.4 ns |  1.29 | 0.0048 |    1376 B | Scoped + async overhead |
+| **Routya_Singleton_Send**      | **333.9 ns** |  **0.90** | 0.0029 |     808 B | ⚡ **10% faster, 20% less memory** |
+| **Routya_Transient_Send**      | **336.0 ns** |  **0.91** | 0.0033 |     832 B | ⚡ **9% faster, 18% less memory** |
+| Routya_Singleton_SendAsync | 397.7 ns |  1.08 | 0.0033 |     928 B | 8% overhead for async, 9% less memory |
+| Routya_Scoped_Send         | 395.5 ns |  1.07 | 0.0038 |    1016 B | Scoped DI overhead |
+| Routya_Transient_SendAsync | 418.0 ns |  1.13 | 0.0038 |     952 B | 13% overhead for async, 6% less memory |
+| Routya_Scoped_SendAsync    | 476.4 ns |  1.29 | 0.0038 |    1136 B | Scoped + async overhead |
+
+> **How to read these figures.** `Gen0` and `Allocated` are deterministic and were re-measured
+> against the current code, so they hold on any machine. `Mean` and `Ratio` date from the
+> environment listed above and have not been regenerated since; treat them as indicative and
+> expect different absolute numbers on your own hardware.
+>
+> Pipeline behaviors registered as `Scoped` are constructed once per dispatch scope, which costs a
+> further 272 B per dispatch over `Singleton` behaviors. Register behaviors as `Singleton` where
+> they are stateless.
 
 **Key Highlights:**
 - ✅ **Singleton/Transient Send handlers are 9-10% faster than MediatR!** 🚀
@@ -364,16 +373,21 @@ Benchmarks comparing Routya against MediatR 12.5.0 for notification patterns (Be
 | Method                      | Mean     | Ratio | Gen0   | Allocated | Notes |
 |---------------------------- |---------:|------:|-------:|----------:|-------|
 | MediatR_Publish             | 157.6 ns |  1.00 | 0.0017 |     440 B | Baseline |
-| **Routya_Singleton_Sequential** | **110.5 ns** |  **0.70** | 0.0007 |     192 B | ⚡ **30% faster, 56% less memory!** 🚀 |
-| **Routya_Singleton_Parallel**   | **143.6 ns** |  **0.91** | 0.0012 |     312 B | ⚡ **9% faster, 29% less memory** |
-| **Routya_Transient_Sequential** | **146.0 ns** |  **0.93** | 0.0010 |     240 B | ⚡ **7% faster, 45% less memory** |
-| Routya_Transient_Parallel   | 170.6 ns |  1.08 | 0.0014 |     360 B | 8% slower (parallel overhead) |
-| Routya_Scoped_Sequential    | 238.1 ns |  1.51 | 0.0014 |     424 B | Scoped DI overhead |
-| Routya_Scoped_Parallel      | 265.8 ns |  1.69 | 0.0019 |     544 B | Scoped + parallel overhead |
+| **Routya_Singleton_Sequential** | **110.5 ns** |  **0.70** | 0.0005 |     160 B | ⚡ **30% faster, 64% less memory!** 🚀 |
+| **Routya_Singleton_Parallel**   | **143.6 ns** |  **0.91** | 0.0010 |     280 B | ⚡ **9% faster, 36% less memory** |
+| **Routya_Transient_Sequential** | **146.0 ns** |  **0.93** | 0.0007 |     208 B | ⚡ **7% faster, 53% less memory** |
+| Routya_Transient_Parallel   | 170.6 ns |  1.08 | 0.0012 |     328 B | 8% slower (parallel overhead), 25% less memory |
+| Routya_Scoped_Sequential    | 238.1 ns |  1.51 | 0.0014 |     392 B | Scoped DI overhead |
+| Routya_Scoped_Parallel      | 265.8 ns |  1.69 | 0.0019 |     512 B | Scoped + parallel overhead |
+
+> **How to read these figures.** `Gen0` and `Allocated` are deterministic and were re-measured
+> against the current code, so they hold on any machine. `Mean` and `Ratio` date from the
+> environment listed under Requests above and have not been regenerated since; treat them as
+> indicative.
 
 **Key Highlights:**
-- ✅ **Singleton sequential: 30% faster than MediatR with 56% less memory** (192B vs 440B) 🚀
-- ✅ **Transient sequential: 7% faster with 45% less memory** (240B vs 440B)
+- ✅ **Singleton sequential: 30% faster than MediatR with 64% less memory** (160B vs 440B) 🚀
+- ✅ **Transient sequential: 7% faster with 53% less memory** (208B vs 440B)
 - ✅ **Registry-based dispatch** - no `GetServices` call for handlers described in the registry
 - ✅ **Parallel dispatching** available with minimal overhead
 - ✅ **Flexible lifetime management** for different use cases
