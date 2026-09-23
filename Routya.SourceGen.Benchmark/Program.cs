@@ -14,7 +14,7 @@ namespace Routya.SourceGen.Benchmark;
 
 internal class Program
 {
-    public static void Main() => BenchmarkRunner.Run<SourceGenBenchmarks>();
+    public static void Main(string[] args) => BenchmarkRunner.Run<SourceGenBenchmarks>(args: args);
 }
 
 [MemoryDiagnoser]
