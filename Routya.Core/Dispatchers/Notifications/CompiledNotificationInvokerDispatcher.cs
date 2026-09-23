@@ -12,12 +12,25 @@ using System.Threading.Tasks;
 namespace Routya.Core.Dispatchers.Notifications
 {
     /// <summary>
-    /// High-performance notification dispatcher using compiled expression trees for fast handler invocation.
+    /// Notification dispatcher that fans a notification out to every registered handler.
     /// </summary>
     /// <remarks>
-    /// This dispatcher uses a registry-based approach with compiled expressions and per-instance caching.
-    /// Handlers are discovered from the registry and compiled on first use, then cached for subsequent dispatches.
-    /// Supports both sequential and parallel notification publishing strategies.
+    /// <para>
+    /// Handlers described in the registry, meaning those registered through
+    /// <c>AddRoutyaNotificationHandler</c> or by assembly scanning, get a wrapper built once per
+    /// notification type. Singleton handlers are resolved once; Scoped and Transient handlers are
+    /// resolved from the dispatch scope on every publish. Handlers registered directly against
+    /// <c>IServiceCollection</c> are resolved through their interface on every publish, because
+    /// their concrete types are not guaranteed to be registered and they may be Scoped.
+    /// </para>
+    /// <para>
+    /// Supports both sequential and parallel publishing strategies.
+    /// </para>
+    /// <para>
+    /// No expression trees are built or compiled. Everything here is ordinary delegates and generic
+    /// dispatch, which keeps the type free of the runtime code generation that trimming and Native
+    /// AOT cannot support.
+    /// </para>
     /// </remarks>
     public sealed class CompiledNotificationDispatcher : IRoutyaNotificationDispatcher
     {
