@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
 using Routya.Core.Extensions;
 
@@ -29,6 +29,7 @@ public class AllocationBudgetTests
     private const long RootSingletonPublishBudget = 64;        // measured  32 B
     private const long ScopedSendAsyncBudget = 640;            // measured 544 B
     private const long ScopedPublishBudget = 480;              // measured 392 B
+    private const long ScopedParallelPublishBudget = 1024;     // measured 824 B, one scope per handler
 
     [Fact]
     public void Send_With_Singleton_Handler_Stays_Within_Budget()
@@ -87,6 +88,18 @@ public class AllocationBudgetTests
             () => routya.PublishAsync(notification).GetAwaiter().GetResult());
 
         AssertWithinBudget(bytes, ScopedPublishBudget, "PublishAsync with two Scoped handlers");
+    }
+
+    [Fact]
+    public void PublishParallelAsync_With_Two_Scoped_Handlers_Stays_Within_Budget()
+    {
+        var routya = BuildScopedProvider().GetRequiredService<IRoutya>();
+        var notification = new AllocEvent(1);
+
+        var bytes = AllocationProbe.PerOperation(
+            () => routya.PublishParallelAsync(notification).GetAwaiter().GetResult());
+
+        AssertWithinBudget(bytes, ScopedParallelPublishBudget, "PublishParallelAsync with two Scoped handlers");
     }
 
     private static void AssertWithinBudget(long measured, long budget, string what)
