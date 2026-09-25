@@ -57,15 +57,24 @@ jobs:
     - name: Run Demo Application
       run: dotnet run --project Routya.SourceGen.Demo/Routya.SourceGen.Demo.csproj --configuration Release --no-build
     
+    # The benchmark project is built but deliberately not run here.
+    #
+    # BenchmarkDotNet timings are meaningless on a shared CI runner: the hardware differs between
+    # runs and neighbouring workloads compete for CPU. Measuring locally, the MediatR baseline has
+    # been seen drifting by a third between runs on identical code, which is far larger than any
+    # regression worth catching. Comparing one CI run against a previous one compounds the problem,
+    # because each run lands on a different machine.
+    #
+    # Performance is instead guarded by the allocation budget tests in Routya.Test and
+    # Routya.SourceGen.Test. Allocated bytes are deterministic, so they hold on any hardware.
     - name: Build Benchmark Project
       run: dotnet build Routya.SourceGen.Benchmark/Routya.SourceGen.Benchmark.csproj --configuration Release --no-restore
-    
-    - name: Run Benchmarks (Quick Mode)
-      run: dotnet run --project Routya.SourceGen.Benchmark/Routya.SourceGen.Benchmark.csproj --configuration Release --no-build -- --filter "*" --job short
-    
-    - name: Run Tests (if test project exists)
-      run: |
-        if (Test-Path "Routya.Test/Routya.Test.csproj") {
-          dotnet test Routya.Test/Routya.Test.csproj --configuration Release --no-restore
-        }
-      shell: pwsh
+
+    - name: Run tests (Routya.Test)
+      run: dotnet test Routya.Test/Routya.Test.csproj --configuration Release
+
+    - name: Run tests (Routya.SourceGenerators.Test)
+      run: dotnet test Routya.SourceGenerators.Test/Routya.SourceGenerators.Test.csproj --configuration Release
+
+    - name: Run tests (Routya.SourceGen.Test)
+      run: dotnet test Routya.SourceGen.Test/Routya.SourceGen.Test.csproj --configuration Release
