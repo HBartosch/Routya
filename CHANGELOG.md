@@ -167,6 +167,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `CreateStream<TRequest, TResponse>` member and your implementation will no longer compile until
   you add it. Consumers of the interface are unaffected. Mocking frameworks that generate
   implementations at runtime need no change
+- **If you construct `DefaultRoutya` directly**, its constructor has gained an
+  `IRoutyaStreamDispatcher` parameter. Resolving `IRoutya` from the container is unaffected, since
+  `AddRoutya` registers the new dispatcher for you. Only code that calls `new DefaultRoutya(...)`
+  needs updating
 - **If you publish to Native AOT and register pipeline behaviors as open generics**, that throws for
   any request whose response is a value type, such as `int` or `decimal`. This is a limitation of
   `Microsoft.Extensions.DependencyInjection` rather than of Routya. Register those behaviors closed,
