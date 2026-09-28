@@ -44,7 +44,7 @@ public class MyController : ControllerBase
 - 🎯 **Full IntelliSense** - type-specific interface with your exact methods
 - 🔬 **Trimming and Native AOT ready** - verified with a running native binary
 
-📖 **[Getting Started Guide →](./GETTING_STARTED_V3.md)** | 📦 **[Changelog →](./CHANGELOG.md)** | 📚 **[Full Docs →](./Routya.SourceGenerators/README.md)**
+📖 **[Getting Started Guide →](./docs/GETTING_STARTED_V3.md)** | 📦 **[Changelog →](./CHANGELOG.md)** | 📚 **[Source Generator Docs →](./Routya.SourceGenerators/README.md)** | 🗂️ **[All docs →](./docs/)**
 
 ---
 

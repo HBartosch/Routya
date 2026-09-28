@@ -1,4 +1,4 @@
-# Getting Started with Routya v3 Source Generator
+﻿# Getting Started with Routya v3 Source Generator
 
 This guide will help you get up and running with Routya's compile-time source generator in just a few minutes.
 
@@ -17,20 +17,20 @@ This guide will help you get up and running with Routya's compile-time source ge
 ### Option 1: Using .NET CLI
 
 ```bash
-dotnet add package Routya.SourceGenerators --version 3.0.0
+dotnet add package Routya.SourceGenerators --version 4.0.0
 ```
 
 ### Option 2: Using Package Manager Console
 
 ```powershell
-Install-Package Routya.SourceGenerators -Version 3.0.0
+Install-Package Routya.SourceGenerators -Version 4.0.0
 ```
 
 ### Option 3: Manually Edit .csproj
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="Routya.SourceGenerators" Version="3.0.0" />
+  <PackageReference Include="Routya.SourceGenerators" Version="4.0.0" />
 </ItemGroup>
 ```
 
@@ -340,8 +340,9 @@ using Routya.Generated;
 
 ## 📚 Additional Resources
 
-- [README.md](./README.md) - Full feature documentation
-- [Release Notes](../RELEASE_NOTES_V3.md) - What's new in v3.0
+- [README.md](../README.md) - Full feature documentation
+- [Changelog](../CHANGELOG.md) - What changed in each release
+- [Release Notes for v3.0](./RELEASE_NOTES_V3.md) - historical, superseded by the changelog
 - [Examples](../Routya.SourceGen.Demo) - Complete working examples
 - [GitHub Issues](https://github.com/hbartosch/routya/issues) - Report bugs
 

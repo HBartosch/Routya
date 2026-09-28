@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    Shared versions for packages referenced by more than one project, so they cannot drift apart.
+    The benchmark projects previously pinned MediatR 12.4.1 in one place and 12.5.0 in two others,
+    which made their results incomparable with each other without anyone noticing.
+
+    MediatR is deliberately held at 12.5.0, the last release under Apache 2.0. Version 13 and later
+    ship under a dual licence requiring a commercial tier for many professional uses, so moving to
+    it is a licensing decision rather than a maintenance one.
+  -->
+  <PropertyGroup>
+    <MediatRVersion>12.5.0</MediatRVersion>
+  </PropertyGroup>
+
+</Project>

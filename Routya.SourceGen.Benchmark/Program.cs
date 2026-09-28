@@ -14,19 +14,35 @@ namespace Routya.SourceGen.Benchmark;
 
 internal class Program
 {
-    public static void Main(string[] args) => BenchmarkRunner.Run<SourceGenBenchmarks>(args: args);
+    // Both classes are run. Pass --filter to select one, for example
+    //   dotnet run -c Release -- --filter *NotificationBenchmarks*
+    public static void Main(string[] args)
+        => BenchmarkSwitcher
+            .FromTypes(new[] { typeof(RequestBenchmarks), typeof(NotificationBenchmarks) })
+            .Run(args);
 }
 
+/// <summary>
+/// Shared setup for both benchmark classes.
+/// </summary>
+/// <remarks>
+/// Requests and notifications live in separate classes on purpose. They were previously one class
+/// with a single <c>Baseline = true</c> on the request benchmark, so every notification row was
+/// divided by a request timing. That made the notification ratios arithmetic rather than a
+/// comparison: a ratio of 0.56 meant "a notification takes 56% of the time a request does", not
+/// "56% of MediatR". Each class now carries its own baseline, so its Ratio column compares like
+/// with like.
+/// </remarks>
 [MemoryDiagnoser]
 [GcServer(true)]
 [GcForce(true)]
-public class SourceGenBenchmarks
+public abstract class SourceGenBenchmarkBase
 {
-    private IServiceProvider _providerMediatR = null!;
-    private IServiceProvider _providerRoutyaV2 = null!;
-    private IServiceProvider _providerRoutyaV3 = null!;
-    private TestRequest _request = null!;
-    private TestNotification _notification = null!;
+    protected IServiceProvider _providerMediatR = null!;
+    protected IServiceProvider _providerRoutyaV2 = null!;
+    protected IServiceProvider _providerRoutyaV3 = null!;
+    protected TestRequest _request = null!;
+    protected TestNotification _notification = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -60,8 +76,11 @@ public class SourceGenBenchmarks
         _providerRoutyaV3 = servicesV3.BuildServiceProvider();
     }
 
-    // ==================== REQUEST/RESPONSE BENCHMARKS ====================
+}
 
+/// <summary>Request dispatch, with MediatR as the baseline.</summary>
+public class RequestBenchmarks : SourceGenBenchmarkBase
+{
     [Benchmark(Baseline = true)]
     public async Task<string> MediatR_Request()
     {
@@ -86,9 +105,12 @@ public class SourceGenBenchmarks
         return await dispatcher.SendAsync(_request);
     }
 
-    // ==================== NOTIFICATION BENCHMARKS ====================
+}
 
-    [Benchmark]
+/// <summary>Notification publishing, with MediatR as its own baseline.</summary>
+public class NotificationBenchmarks : SourceGenBenchmarkBase
+{
+    [Benchmark(Baseline = true)]
     public async Task MediatR_Notification()
     {
         using var scope = _providerMediatR.CreateScope();

@@ -1,4 +1,17 @@
-# Routya v3.0 Release Notes
+﻿# Routya v3.0 Release Notes
+
+> **Historical document.** These are the release notes for v3.0, kept as a record.
+>
+> The performance figures below, including the "46% faster than MediatR" claim, were measured on
+> hardware that is no longer used and against MediatR 12.4.1. They were later found to be
+> unreproducible: the MediatR baseline alone has been observed drifting by a third between runs on
+> identical code. Treat every number here as superseded.
+>
+> For current figures see the allocation budget tests, which assert deterministic byte counts on
+> every build, and the [changelog](../CHANGELOG.md) for what actually changed in each release.
+
+---
+
 
 ## 🎉 Introducing Source Generators!
 

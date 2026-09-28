@@ -82,6 +82,21 @@ Versions follow [Semantic Versioning](https://semver.org/).
   and usable under trimming; the overload taking assemblies carries the scanning annotation.
   Existing source and existing compiled callers are both unaffected, because overload resolution
   prefers the first in normal form
+- Benchmark projects now take the MediatR version from a single `MediatRVersion` property in
+  `Directory.Build.props`. They previously pinned 12.4.1 in one project and 12.5.0 in two others,
+  which made their results incomparable with each other. Held at 12.5.0, the last Apache 2.0
+  release, since moving to 13 or later is a licensing decision rather than a maintenance one
+- Split the source generator benchmark into `RequestBenchmarks` and `NotificationBenchmarks`, each
+  with its own baseline. Both previously lived in one class with a single baseline on the request
+  benchmark, so every notification row was divided by a request timing. A notification ratio of
+  0.56 meant "a notification takes 56% of the time a request does", not "56% of MediatR". Measured
+  correctly, source generated notifications sit at ratio 0.65 against MediatR
+- Moved twelve internal planning and analysis documents from the repository root into `docs/`,
+  leaving only README, CHANGELOG, CONTRIBUTING and SECURITY at the top level. Added `docs/README.md`
+  as an index that separates current guidance from historical notes, and marked
+  `RELEASE_NOTES_V3.md` as superseded, since it still carries the "46% faster" claim measured on
+  hardware no longer in use. Fixed a link in the getting started guide that pointed outside the
+  repository, and updated its install instructions from 3.0.0 to 4.0.0
 - `Routya.Events` no longer produces a package. It is upcoming work with no implementation, but
   `GeneratePackageOnBuild` was writing a `.nupkg` carrying the real `Routya.Events` package id on
   every build. Nothing in CI pushed it, but a published NuGet version can only be delisted, never

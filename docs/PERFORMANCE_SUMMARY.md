@@ -1,4 +1,4 @@
-# Routya Performance Validation Summary
+﻿# Routya Performance Validation Summary
 
 ## ✅ Completed Analysis
 
@@ -210,7 +210,7 @@ Zero-allocation metrics using generic math
 ### Documentation
 - [Performance Analysis](PERFORMANCE_ANALYSIS.md) - Detailed benchmark analysis
 - [Source Generator Plan](SOURCE_GENERATOR_PLAN.md) - Implementation roadmap
-- [README.md](README.md) - Project overview
+- [README.md](../README.md) - Project overview
 
 ### Benchmarks
 - [Request Benchmarks](Routya.Benchmark/Program.cs)
