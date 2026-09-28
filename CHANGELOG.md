@@ -32,6 +32,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `Assembly.GetTypes()` throws `ReflectionTypeLoadException` if one type in the assembly fails to
   load, which happens whenever a scanned assembly references something that is not deployed.
   Scanning now continues with the types that did load
+- **`PublishParallelAsync` handed every handler the same scoped dependency.** It created one
+  dispatch scope and then started all handlers against it concurrently, so two handlers resolving
+  the same `DbContext` produced `A second operation was started on this context before a previous
+  operation completed`. That appears under load rather than in tests, in exactly the fan out
+  scenario parallel publishing is chosen for. Each handler now gets its own scope. Sequential
+  publishing deliberately still shares one, since handlers run one after another
 
 #### `Routya.SourceGenerators`
 
@@ -64,6 +70,15 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - Removed five unreferenced internal types that built and compiled expression trees. `Routya.Core`
   now has no expression tree construction or compilation on any path, which removes the usual
   obstacle to trimming and Native AOT
+- `AddRoutya` is split into two overloads. `AddRoutya(services, configure)` is free of reflection
+  and usable under trimming; the overload taking assemblies carries the scanning annotation.
+  Existing source and existing compiled callers are both unaffected, because overload resolution
+  prefers the first in normal form
+- The build workflow no longer runs BenchmarkDotNet. Timings are meaningless on a shared runner:
+  the MediatR baseline was observed drifting by a third between runs on identical code. The project
+  is still built so it cannot rot, and performance is guarded by the allocation budget tests
+  instead. The same workflow now runs all three test suites, rather than only one behind a
+  `Test-Path` guard that would have silently skipped it
 
 ### Added
 
@@ -71,6 +86,16 @@ Versions follow [Semantic Versioning](https://semver.org/).
   because its request or notification type is not publicly accessible. Previously this was silent
 - `Routya.SourceGenerators.Test`, a Roslyn harness that drives the generator over source text in
   memory, so generator defects that break the consuming build can be expressed as failing tests
+- **Trimming and Native AOT support.** `Routya.Core` now builds with the trimming and AOT analyzers
+  enabled, through `IsAotCompatible`, and produces no IL warnings. A Native AOT console application
+  using the source generator was verified to compile and run, covering async and synchronous
+  handlers, pipeline behaviours and notification fan out. Handler type parameters carry
+  `DynamicallyAccessedMembers` so the trimmer keeps their constructors, and the assembly scanning
+  overload is marked `RequiresUnreferencedCode` so callers are warned at build time rather than
+  losing a handler silently at runtime
+- **Allocation budget tests** in `Routya.Test` and `Routya.SourceGen.Test`. Allocated bytes are
+  deterministic, unlike timings, so these run reliably on any CI runner and guard the figures the
+  README advertises
 
 ### Documentation
 
@@ -84,6 +109,18 @@ Versions follow [Semantic Versioning](https://semver.org/).
   calls become registry optimised. That never happened
 - Corrected the XML documentation on both dispatchers, which described them as using compiled
   expression trees. Neither does
+- Replaced twenty one hard coded nanosecond figures across the XML documentation with measured
+  allocation figures. Those numbers ship in the package and drive IntelliSense, and absolute
+  timings cannot be stated in documentation read on someone else's hardware
+- Added a Trimming and Native AOT section to the README, including two things a user would
+  otherwise find the hard way: pipeline behaviours must be registered closed rather than as open
+  generics under Native AOT when a response type is a value type, and Native AOT costs roughly
+  three to four times the dispatch throughput of the JIT while buying startup time and binary size
+- Documented the differing notification scope semantics on `PublishAsync` and
+  `PublishParallelAsync`, in both the README and the XML documentation
+- Removed "Streaming support" from the README feature list. It is
+  `IRequest<IAsyncEnumerable<T>>`, which the demo itself calls a workaround, and first class
+  `IStreamRequest<T>` remains unimplemented
 
 ### Upgrade notes
 
@@ -97,6 +134,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **If you register pipeline behaviors as `Scoped`**, they are now correctly constructed once per
   dispatch scope rather than once per process. This costs roughly 272 B per dispatch for two
   behaviors. Register behaviors as `Singleton` where they are stateless
+- **If your `PublishParallelAsync` handlers relied on sharing a scoped dependency with each other**,
+  they no longer can, because each handler now gets its own scope. Relying on that was already
+  unsafe, since the handlers run concurrently. Use `PublishAsync` if the handlers genuinely need to
+  share scoped state. The extra scopes cost roughly 300 B per additional handler
+- **If you publish to Native AOT and register pipeline behaviors as open generics**, that throws for
+  any request whose response is a value type, such as `int` or `decimal`. This is a limitation of
+  `Microsoft.Extensions.DependencyInjection` rather than of Routya. Register those behaviors closed,
+  and remove the open generic registration entirely; adding a closed one alongside it does not help
 
 ---
 
