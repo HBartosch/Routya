@@ -1,4 +1,4 @@
-# Routya Source Generator
+﻿# Routya Source Generator
 
 **Compile-time code generation for zero-overhead request/response dispatching**
 
@@ -19,7 +19,7 @@
 - ✅ **Zero dictionary lookups** — direct, type-specific method calls
 - ✅ **Clean API** — `SendAsync(req)` with no type arguments, full IntelliSense per handler
 - ✅ **Compile-time safety** — missing handlers are build errors, not runtime exceptions
-- ✅ **46% faster than MediatR** on notifications
+- ✅ **55% less memory than MediatR** on notifications (272 B against 600 B)
 
 ---
 
@@ -148,14 +148,48 @@ Pipeline behaviors (`IPipelineBehavior<,>`) and notification handlers work ident
 
 ---
 
+## Streaming
+
+A handler implementing `IStreamRequestHandler<TRequest, TResponse>` gets a generated `CreateStream`
+member, alongside `SendAsync` for async handlers and `Send` for synchronous ones:
+
+```csharp
+public record ExportProducts(int CategoryId) : IStreamRequest<Product>;
+
+public class ExportProductsHandler(AppDbContext db) : IStreamRequestHandler<ExportProducts, Product>
+{
+    public IAsyncEnumerable<Product> Handle(ExportProducts request, CancellationToken ct)
+        => db.Products.Where(p => p.CategoryId == request.CategoryId).AsAsyncEnumerable();
+}
+
+// Generated: no generic arguments needed at the call site
+await foreach (var product in routya.CreateStream(new ExportProducts(7), ct))
+{
+    // ...
+}
+```
+
+Items are produced lazily and nothing is buffered. Any registered
+`IStreamPipelineBehavior<TRequest, TResponse>` wraps the whole enumeration, so it observes every item
+and any exception thrown part way through.
+
+---
+
 ## Performance
 
 | Benchmark | Routya Source Gen | MediatR | vs MediatR |
 |---|---:|---:|---:|
-| Request/response (2 behaviors) | 335 ns | 337 ns | on par |
-| Notifications (2 handlers) | **121 ns** | 223 ns | **46% faster** |
+| Request/response, allocated | **976 B** | 1008 B | 3% less |
+| Notifications, 2 handlers, allocated | **272 B** | 600 B | **55% less** |
 
-Full benchmark results are in [Routya.SourceGen.Benchmark](../Routya.SourceGen.Benchmark).
+Allocated bytes are deterministic, so these figures hold on any machine. Timings are deliberately
+not published here: they depend on hardware, and the MediatR baseline in these benchmarks has been
+observed drifting by a third between runs on identical code. Run
+[Routya.SourceGen.Benchmark](../Routya.SourceGen.Benchmark) on a quiet machine if you need timings
+for your own hardware.
+
+Allocation figures are asserted on every build by the budget tests in `Routya.SourceGen.Test`, so
+they cannot go stale unnoticed.
 
 ---
 

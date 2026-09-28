@@ -8,9 +8,16 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-> A correctness release, plus first class streaming. No existing API changed shape, and no source
-> change is required to upgrade unless you implement `IRoutya` yourself.
-> Read **Upgrade notes** below before upgrading.
+---
+
+## [4.0.0] — 2026-09-28
+
+> A correctness release, plus first class streaming and verified Native AOT support.
+>
+> The major version reflects two breaking changes to the public surface, both narrow: `IRoutya`
+> gained a member, and `DefaultRoutya`'s public constructor gained a parameter. Most consumers
+> resolve `IRoutya` from the container and need no source change. Read **Upgrade notes** before
+> upgrading.
 
 ### Fixed
 
@@ -282,7 +289,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/HBartosch/Routya/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/HBartosch/Routya/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/HBartosch/Routya/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/HBartosch/Routya/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/HBartosch/Routya/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/HBartosch/Routya/compare/v2.0.0...v3.0.0

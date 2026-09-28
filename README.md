@@ -1,4 +1,4 @@
-# Routya
+﻿# Routya
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/dotnet.yml?label=CI&style=flat-square)
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/build-and-test.yml?label=Tests&style=flat-square)
 [![NuGet](https://img.shields.io/nuget/v/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
@@ -11,12 +11,12 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 ---
 
-## ⚡ **NEW: v3.0 Source Generator - 46% Faster!**
+## ⚡ **Source Generator: compile time dispatch**
 
-Get **compile-time code generation** for zero-overhead dispatching:
+Get **compile-time code generation** with no reflection on the dispatch path:
 
 ```bash
-dotnet add package Routya.SourceGenerators --version 3.0.0
+dotnet add package Routya.SourceGenerators --version 4.0.0
 ```
 
 ```csharp
@@ -37,13 +37,14 @@ public class MyController : ControllerBase
 }
 ```
 
-**Performance:**
-- ⚡ **46% faster** than MediatR on notifications
+**Why use it:**
+- 📉 **Less memory than MediatR** - 272 B per notification publish against 600 B, and 976 B per request against 1008 B. Allocations are deterministic, so these hold on any machine
 - 🔥 **Zero reflection** - all dispatch code generated at compile-time
 - 📦 **Zero dictionary lookups** - direct method calls
 - 🎯 **Full IntelliSense** - type-specific interface with your exact methods
+- 🔬 **Trimming and Native AOT ready** - verified with a running native binary
 
-📖 **[Getting Started Guide →](./GETTING_STARTED_V3.md)** | 📦 **[Release Notes →](./RELEASE_NOTES_V3.md)** | 📚 **[Full Docs →](./Routya.SourceGenerators/README.md)**
+📖 **[Getting Started Guide →](./GETTING_STARTED_V3.md)** | 📦 **[Changelog →](./CHANGELOG.md)** | 📚 **[Full Docs →](./Routya.SourceGenerators/README.md)**
 
 ---
 
@@ -65,17 +66,58 @@ public class MyController : ControllerBase
 
 ## 📦 NuGet Packages
 
-### v3.0 - Source Generator (Recommended for new projects)
+### Source Generator (recommended for new projects)
 ```bash
-dotnet add package Routya.SourceGenerators --version 3.0.0
+dotnet add package Routya.SourceGenerators --version 4.0.0
 ```
-Includes `Routya.Core` automatically.
+Includes `Routya.Core` automatically. Compile time dispatch, no reflection, and the only option that
+is verified under trimming and Native AOT.
 
-### v2.x - Runtime Dispatcher
+### Runtime Dispatcher
 ```bash
-dotnet add package Routya.Core --version 2.0.0
+dotnet add package Routya.Core --version 4.0.0
 ```
 Use for existing projects or when runtime flexibility is needed.
+
+### Everything in one package
+```bash
+dotnet add package Routya --version 4.0.0
+```
+Pulls in both `Routya.Core` and `Routya.SourceGenerators`.
+
+### ⚠️ Breaking Changes in v4.0.0
+
+Both are narrow. If you resolve `IRoutya` from the container, which is the normal case, **no source
+change is required**.
+
+**1. `IRoutya` gained `CreateStream`**
+
+Only affects code that *implements* the interface, typically a hand written test double. Add the
+member, or switch to a mocking framework, which generates it for you.
+
+```csharp
+IAsyncEnumerable<TResponse> CreateStream<TRequest, TResponse>(
+    TRequest request,
+    CancellationToken cancellationToken = default)
+        where TRequest : IStreamRequest<TResponse>;
+```
+
+**2. `DefaultRoutya`'s constructor gained a parameter**
+
+Only affects code calling `new DefaultRoutya(...)` directly. `AddRoutya` registers the new
+`IRoutyaStreamDispatcher` for you.
+
+**Behaviour changes worth knowing about**, all fixes rather than redesigns:
+
+- `Scoped` pipeline behaviours are now built once per dispatch rather than once per process. They
+  were previously reused after their scope had been disposed. Costs about 272 B per dispatch for two
+  behaviours; register them `Singleton` where they are stateless
+- `PublishParallelAsync` now gives each handler its own scope, so parallel handlers can no longer
+  share scoped state with one another. Sequential publishing still shares one
+- `internal` handlers previously skipped by the source generator are now discovered and registered.
+  If you registered one manually as a workaround, remove that registration
+
+Full detail, including upgrade notes, is in the [changelog](./CHANGELOG.md).
 
 ### ⚠️ Breaking Changes in v2.0.0
 
@@ -120,10 +162,10 @@ public async Task<TResponse> Handle(
 ```
 
 **2. Performance Improvements**
-- Registry-based optimization with smart fallback
-- Auto-caching of discovered handlers for improved performance
-- 9-10% faster request dispatching with Singleton/Transient handlers
-- 30% faster notification dispatching with Singleton sequential handlers
+- Registry-based dispatch for handlers registered through the `AddRoutya*Handler` methods or assembly scanning
+
+---
+
 ## 🚀 Quick Start
 
 # Dependency injection

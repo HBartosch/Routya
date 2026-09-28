@@ -1,4 +1,4 @@
-# Routya
+﻿# Routya
 
 The all-in-one Routya package — install this and get everything you need.
 
@@ -12,7 +12,7 @@ The all-in-one Routya package — install this and get everything you need.
 | Package | Description |
 |---|---|
 | [Routya.Core](https://www.nuget.org/packages/Routya.Core) | High-performance CQRS dispatcher — request/response, notifications, pipeline behaviors |
-| [Routya.SourceGenerators](https://www.nuget.org/packages/Routya.SourceGenerators) | Compile-time source generator — zero reflection, type-specific dispatch, 46% faster than MediatR |
+| [Routya.SourceGenerators](https://www.nuget.org/packages/Routya.SourceGenerators) | Compile-time source generator — zero reflection, type-specific dispatch, 55% less memory than MediatR on notifications |
 
 Instead of installing both packages separately, install `Routya` and both are pulled in automatically, including the source generator.
 
