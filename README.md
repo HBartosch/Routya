@@ -51,7 +51,7 @@ public class MyController : ControllerBase
 ## ✨ Features
 
 - ✅ Clean interface-based abstraction for Requests/Responses and Notifications
-- 🚀 **High-performance dispatching** - Competitive with MediatR while offering more flexibility
+- 🚀 **Low allocation dispatching** - Less memory per dispatch than MediatR, with more lifetime flexibility
 - **⚡ Source generation** - Compile-time code generation for maximum speed
 - **🌊 Streaming** - `IStreamRequest<T>` with lazy, unbuffered `IAsyncEnumerable<T>` and behaviours that wrap the whole enumeration. See [Streaming](#-streaming)
 - **🔬 Trimming and Native AOT** - No IL warnings, verified with a running Native AOT binary. See [Trimming and Native AOT](#-trimming-and-native-aot)
@@ -236,7 +236,7 @@ builder.Services.AddRoutyaNotificationHandler<UserRegisteredNotification, LogAud
 
 **Why use these methods?**
 - ✅ **Automatic registry population** - Handlers added to high-performance registry
-- ✅ **30% faster** for notifications (110ns vs 158ns with Singleton)
+- ✅ **Lower allocation** for notifications (160 B vs 440 B with Singleton)
 - ✅ **Type-safe** - Compile-time verification of handler signatures
 - ✅ **Flexible lifetimes** - Choose Singleton/Scoped/Transient per handler
 
@@ -295,38 +295,33 @@ the concrete type and lifetime up front, which lets Routya resolve the handler d
 
 # Requests
 
-### 📊 Benchmark Results (.NET 8 - November 2025)
-Benchmarks comparing Routya against MediatR 12.5.0 with simple request handlers (BenchmarkDotNet v0.14.0)
+### 📊 Allocation per dispatch
 
-**Test Environment:**
-- CPU: 11th Gen Intel Core i7-11800H @ 2.30GHz (8 cores, 16 logical processors)
-- RAM: System with AVX-512F support
-- OS: Windows 11 (10.0.22623)
-- .NET: 8.0.17 (8.0.1725.26602), X64 RyuJIT
-- GC: Concurrent Server
+Compared against MediatR 12.5.0 with simple request handlers.
 
-#### Request Dispatching Performance
-| Method                     | Mean     | Ratio | Gen0   | Allocated | Notes |
-|--------------------------- |---------:|------:|-------:|----------:|-------|
-| MediatR_SendAsync          | 369.3 ns |  1.00 | 0.0038 |    1016 B | Baseline |
-| **Routya_Singleton_Send**      | **333.9 ns** |  **0.90** | 0.0029 |     808 B | ⚡ **10% faster, 20% less memory** |
-| **Routya_Transient_Send**      | **336.0 ns** |  **0.91** | 0.0033 |     832 B | ⚡ **9% faster, 18% less memory** |
-| Routya_Singleton_SendAsync | 397.7 ns |  1.08 | 0.0033 |     928 B | 8% overhead for async, 9% less memory |
-| Routya_Scoped_Send         | 395.5 ns |  1.07 | 0.0038 |    1016 B | Scoped DI overhead |
-| Routya_Transient_SendAsync | 418.0 ns |  1.13 | 0.0038 |     952 B | 13% overhead for async, 6% less memory |
-| Routya_Scoped_SendAsync    | 476.4 ns |  1.29 | 0.0038 |    1136 B | Scoped + async overhead |
+| Configuration | Allocated | vs MediatR |
+|---|---:|---:|
+| MediatR `SendAsync` | 1016 B | baseline |
+| **Routya `Send`, Singleton handler** | **808 B** | **20% less** |
+| **Routya `Send`, Transient handler** | **832 B** | **18% less** |
+| Routya `SendAsync`, Singleton handler | 928 B | 9% less |
+| Routya `SendAsync`, Transient handler | 952 B | 6% less |
+| Routya `Send`, Scoped handler | 1016 B | same |
+| Routya `SendAsync`, Scoped handler | 1136 B | 12% more |
 
-> **How to read these figures.** `Gen0` and `Allocated` are deterministic and were re-measured
-> against the current code, so they hold on any machine. `Mean` and `Ratio` date from the
-> environment listed above and have not been regenerated since; treat them as indicative and
-> expect different absolute numbers on your own hardware.
+> **Why allocations and not timings.** Allocated bytes are deterministic: they do not depend on CPU,
+> machine load or GC mode, so these figures hold on your hardware as well as ours, and they are
+> asserted on every build by the allocation budget tests. Timings are not published here because
+> they are not reproducible. On our own measurements the MediatR baseline, running unchanged code,
+> drifted by a third between runs. If you need timings for your hardware, run
+> [Routya.Benchmark](./Routya.Benchmark) on a quiet machine.
 >
 > Pipeline behaviors registered as `Scoped` are constructed once per dispatch scope, which costs a
 > further 272 B per dispatch over `Singleton` behaviors. Register behaviors as `Singleton` where
 > they are stateless.
 
 **Key Highlights:**
-- ✅ **Singleton/Transient Send handlers are 9-10% faster than MediatR!** 🚀
+- ✅ **20% less memory than MediatR** with a Singleton handler
 - ✅ **Registry-based dispatch** for handlers registered through `AddRoutya*Handler` or assembly scanning
 - ✅ **Zero memory leaks** with proper scope disposal
 - ✅ **Fast-path optimization** when no behaviors configured
@@ -410,29 +405,31 @@ In the following example the LoggingBehavior will write to console before your r
 
 # Notifications
 
-### 📊 Notification Dispatching Performance
-Benchmarks comparing Routya against MediatR 12.5.0 for notification patterns (BenchmarkDotNet v0.14.0)
+### 📊 Allocation per publish
 
-| Method                      | Mean     | Ratio | Gen0   | Allocated | Notes |
-|---------------------------- |---------:|------:|-------:|----------:|-------|
-| MediatR_Publish             | 157.6 ns |  1.00 | 0.0017 |     440 B | Baseline |
-| **Routya_Singleton_Sequential** | **110.5 ns** |  **0.70** | 0.0005 |     160 B | ⚡ **30% faster, 64% less memory!** 🚀 |
-| **Routya_Singleton_Parallel**   | **143.6 ns** |  **0.91** | 0.0010 |     280 B | ⚡ **9% faster, 36% less memory** |
-| **Routya_Transient_Sequential** | **146.0 ns** |  **0.93** | 0.0007 |     208 B | ⚡ **7% faster, 53% less memory** |
-| Routya_Transient_Parallel   | 170.6 ns |  1.08 | 0.0012 |     328 B | 8% slower (parallel overhead), 25% less memory |
-| Routya_Scoped_Sequential    | 238.1 ns |  1.51 | 0.0014 |     392 B | Scoped DI overhead |
-| Routya_Scoped_Parallel      | 265.8 ns |  1.69 | 0.0019 |     512 B | Scoped + parallel overhead |
+Compared against MediatR 12.5.0, two handlers per notification.
 
-> **How to read these figures.** `Gen0` and `Allocated` are deterministic and were re-measured
-> against the current code, so they hold on any machine. `Mean` and `Ratio` date from the
-> environment listed under Requests above and have not been regenerated since; treat them as
-> indicative.
+| Configuration | Allocated | vs MediatR |
+|---|---:|---:|
+| MediatR `Publish` | 440 B | baseline |
+| **Routya sequential, Singleton handlers** | **160 B** | **64% less** |
+| **Routya sequential, Transient handlers** | **208 B** | **53% less** |
+| Routya parallel, Singleton handlers | 280 B | 36% less |
+| Routya parallel, Transient handlers | 328 B | 25% less |
+| Routya sequential, Scoped handlers | 392 B | 11% less |
+| Routya parallel, Scoped handlers | 824 B | 87% more |
+
+> Parallel publishing with `Scoped` handlers gives every handler its own dispatch scope, which is
+> what makes it safe to use a `DbContext` in concurrent handlers. That is where the extra allocation
+> goes. Sequential publishing shares one scope and stays at 392 B.
+>
+> As above, allocations rather than timings, because allocations are deterministic and asserted on
+> every build.
 
 **Key Highlights:**
-- ✅ **Singleton sequential: 30% faster than MediatR with 64% less memory** (160B vs 440B) 🚀
-- ✅ **Transient sequential: 7% faster with 53% less memory** (208B vs 440B)
+- ✅ **64% less memory than MediatR** with Singleton handlers, 160 B against 440 B
 - ✅ **Registry-based dispatch** - no `GetServices` call for handlers described in the registry
-- ✅ **Parallel dispatching** available with minimal overhead
+- ✅ **Parallel dispatching** with a scope per handler, safe for `DbContext`
 - ✅ **Flexible lifetime management** for different use cases
 
 Define your notification

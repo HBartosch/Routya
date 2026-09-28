@@ -152,6 +152,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   on `Send` rows, 240 B on `SendAsync` rows and 32 B on every notification row. Several derived
   memory percentages were understating Routya, for example Singleton sequential notifications use
   64% less memory than MediatR rather than the 56% published
+- Removed every timing claim from the published documentation and replaced the benchmark tables
+  with allocation tables. Allocated bytes are deterministic and asserted on every build, so they
+  hold on the reader's hardware; timings are not reproducible, with the MediatR baseline observed
+  drifting by a third between runs on identical code. The one remaining reference to speed is the
+  Native AOT caveat, which warns that AOT costs throughput rather than claiming an advantage
 - Removed the claim that handlers discovered outside the registry are added to it and that later
   calls become registry optimised. That never happened
 - Corrected the XML documentation on both dispatchers, which described them as using compiled
