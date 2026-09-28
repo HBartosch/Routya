@@ -1,3 +1,5 @@
+﻿using Xunit.Abstractions;
+using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
 using Routya.Generated;
@@ -18,6 +20,10 @@ namespace Routya.SourceGen.Test;
 /// </remarks>
 public class GeneratedAllocationBudgetTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public GeneratedAllocationBudgetTests(ITestOutputHelper output) => _output = output;
+
     // Measured on net8.0, then rounded up for headroom.
     private const long SendAsyncBudget = 256;   // measured 200 B
     private const long SendBudget = 96;         // measured  56 B
@@ -58,8 +64,10 @@ public class GeneratedAllocationBudgetTests
         AssertWithinBudget(bytes, PublishAsyncBudget, "Generated PublishAsync with two handlers");
     }
 
-    private static void AssertWithinBudget(long measured, long budget, string what)
+    private void AssertWithinBudget(long measured, long budget, string what)
     {
+        GeneratedAllocationReport.Record(_output, "Routya source generated dispatch", what, measured, budget);
+
         Assert.True(
             measured <= budget,
             $"{what}: allocated {measured} B per operation, budget is {budget} B. "
@@ -132,4 +140,49 @@ public class AllocGenEventHandlerTwo : INotificationHandler<AllocGenEvent>
 {
     public Task Handle(AllocGenEvent notification, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+}
+
+/// <summary>
+/// Reports a measured allocation figure so it is visible on a green run, not only on failure.
+/// </summary>
+/// <remarks>
+/// Writes to the test output, and when running under GitHub Actions also appends a row to the job
+/// summary, which renders as a table on the workflow run page. Without this the budgets pass
+/// silently and a pipeline tells you nothing about what the code actually allocates on that
+/// hardware.
+/// </remarks>
+public static class GeneratedAllocationReport
+{
+    private static readonly object Gate = new object();
+    private static bool _headerWritten;
+
+    public static void Record(ITestOutputHelper output, string suite, string scenario, long measured, long budget)
+    {
+        var headroom = budget - measured;
+        output.WriteLine($"{scenario}: {measured} B per operation (budget {budget} B, {headroom} B headroom)");
+
+        var summaryPath = Environment.GetEnvironmentVariable("GITHUB_STEP_SUMMARY");
+
+        if (string.IsNullOrEmpty(summaryPath))
+        {
+            return;
+        }
+
+        lock (Gate)
+        {
+            if (!_headerWritten)
+            {
+                File.AppendAllText(
+                    summaryPath,
+                    $"{Environment.NewLine}### Allocation budgets: {suite}{Environment.NewLine}{Environment.NewLine}"
+                    + $"| Scenario | Measured | Budget | Headroom |{Environment.NewLine}"
+                    + $"|---|---:|---:|---:|{Environment.NewLine}");
+                _headerWritten = true;
+            }
+
+            File.AppendAllText(
+                summaryPath,
+                $"| {scenario} | {measured} B | {budget} B | {headroom} B |{Environment.NewLine}");
+        }
+    }
 }

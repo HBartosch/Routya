@@ -42,13 +42,13 @@ jobs:
       run: dotnet build Routya.Package/Routya.Package.csproj --configuration Release --no-restore
 
     - name: Run tests (Routya.Test)
-      run: dotnet test Routya.Test/Routya.Test.csproj --configuration Release --verbosity normal
+      run: dotnet test Routya.Test/Routya.Test.csproj --configuration Release --logger "console;verbosity=detailed"
 
     - name: Run tests (Routya.SourceGenerators.Test)
       run: dotnet test Routya.SourceGenerators.Test/Routya.SourceGenerators.Test.csproj --configuration Release --verbosity normal
 
     - name: Run tests (Routya.SourceGen.Test)
-      run: dotnet test Routya.SourceGen.Test/Routya.SourceGen.Test.csproj --configuration Release --verbosity normal
+      run: dotnet test Routya.SourceGen.Test/Routya.SourceGen.Test.csproj --configuration Release --logger "console;verbosity=detailed"
 
     - name: Verify source generator output (Routya.SourceGen.Test)
       run: |
