@@ -123,3 +123,27 @@ public class DeleteProductHandler : IAsyncRequestHandler<DeleteProductRequest, b
         return true;
     }
 }
+
+// STREAM HANDLER - produces items lazily instead of returning them all at once.
+// Registered as Scoped, so it injects AppDbContext directly rather than creating its own scope.
+// Under RoutyaDispatchScope.Scoped the dispatch scope stays alive for the whole enumeration, so
+// the DbContext is still usable on the last item as well as the first.
+public class ExportProductsHandler : IStreamRequestHandler<ExportProductsRequest, Product>
+{
+    private readonly AppDbContext _dbContext;
+
+    public ExportProductsHandler(AppDbContext dbContext)
+    {
+        _dbContext = dbContext;
+    }
+
+    public IAsyncEnumerable<Product> Handle(ExportProductsRequest request, CancellationToken cancellationToken)
+    {
+        // AsAsyncEnumerable streams rows from the database rather than materialising a list,
+        // so memory stays flat no matter how many products match.
+        return _dbContext.Products
+            .Where(p => p.Price >= request.MinimumPrice)
+            .OrderBy(p => p.Id)
+            .AsAsyncEnumerable();
+    }
+}

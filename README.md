@@ -634,10 +634,13 @@ dotnet run
 
 ### Runtime dispatch demo — [`Routya.WebApi.Demo`](./Routya.WebApi.Demo)
 
-Demonstrates `IRoutya` (runtime reflection-based dispatch) with Entity Framework Core:
+Demonstrates `IRoutya` (runtime dispatch) with Entity Framework Core:
 - ✅ **All three handler lifetimes** (Singleton, Scoped, Transient)
 - ✅ **Entity Framework Core** with SQL Server
 - ✅ **Full CRUD operations** via RESTful API
+- ✅ **`IStreamRequest<T>` streaming** — `GET /api/products/stream` reads rows straight from the
+  database with `AsAsyncEnumerable()` and writes each product to the response as it arrives, so
+  nothing is buffered. The `Scoped` handler keeps its `DbContext` for the whole enumeration
 
 ```powershell
 cd Routya.WebApi.Demo

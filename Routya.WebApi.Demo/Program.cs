@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Routya.Core.Abstractions;
 using Routya.Core.Extensions;
 using Routya.WebApi.Demo.Data;
@@ -27,6 +27,9 @@ builder.Services.AddRoutyaAsyncRequestHandler<UpdateProductStockRequest, Product
 builder.Services.AddRoutyaAsyncRequestHandler<GetProductRequest, Product?, GetProductHandler>(ServiceLifetime.Scoped);
 builder.Services.AddRoutyaAsyncRequestHandler<DeleteProductRequest, bool, DeleteProductHandler>(ServiceLifetime.Scoped);
 builder.Services.AddRoutyaAsyncRequestHandler<GetAllProductsRequest, List<Product>, GetAllProductsHandler>(ServiceLifetime.Transient);
+
+// Register the Stream Handler. Scoped, so it can hold a DbContext across the whole stream.
+builder.Services.AddRoutyaStreamRequestHandler<ExportProductsRequest, Product, ExportProductsHandler>(ServiceLifetime.Scoped);
 
 // Register Notification Handlers with different lifetimes
 builder.Services.AddRoutyaNotificationHandler<UserCreatedNotification, LoggingNotificationHandler>(ServiceLifetime.Singleton);
