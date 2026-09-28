@@ -51,8 +51,8 @@ public class MyController : ControllerBase
 
 - ✅ Clean interface-based abstraction for Requests/Responses and Notifications
 - 🚀 **High-performance dispatching** - Competitive with MediatR while offering more flexibility
-- **⚡ NEW: Source generation** - Compile-time code generation for maximum speed
-- **🌊 NEW: Streaming support** - `IAsyncEnumerable<T>` for large datasets
+- **⚡ Source generation** - Compile-time code generation for maximum speed
+- **🔬 Trimming and Native AOT** - No IL warnings, verified with a running Native AOT binary. See [Trimming and Native AOT](#-trimming-and-native-aot)
 - ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
 - 🧩 Pipeline behavior support for cross-cutting concerns
 - 🔄 Supports both **sequential** and **parallel** notification dispatching
@@ -445,6 +445,73 @@ or in parallel
 ```C#
      await dispatcher.PublishParallelAsync(new UserRegisteredNotification("john.doe@example.com"));
 ```
+
+### ⚠️ Scope behaviour differs between the two
+
+Under `RoutyaDispatchScope.Scoped`, the two publish methods handle scopes differently, and the
+difference matters if your handlers use `DbContext` or anything else registered as `Scoped`.
+
+| | Scope | Consequence |
+|---|---|---|
+| `PublishAsync` (sequential) | **One shared scope** for all handlers | Handlers can share scoped state. A later handler can commit work an earlier one staged through a shared unit of work |
+| `PublishParallelAsync` | **One scope per handler** | Handlers cannot share scoped state with each other. Each gets its own `DbContext`, so concurrent handlers cannot collide |
+
+This is deliberate. Handlers running in parallel would otherwise be handed the same scoped instance
+simultaneously, and `DbContext` throws `InvalidOperationException: A second operation was started on
+this context before a previous operation completed` when that happens. The extra scopes cost roughly
+300 bytes per additional handler.
+
+If your parallel handlers need to share scoped state, they are not independent, and
+`PublishAsync` is the correct choice.
+
+---
+
+## 🔬 Trimming and Native AOT
+
+`Routya.Core` builds with the .NET trimming and AOT analyzers enabled and produces **no IL warnings**.
+It contains no expression tree construction or compilation, and no reflection on the dispatch path.
+
+A Native AOT console application using the source generator has been verified to compile and run,
+covering async and synchronous handlers, pipeline behaviours and notification fan out.
+
+### What is supported
+
+| | Trimming / Native AOT |
+|---|---|
+| `Routya.SourceGenerators` with `AddGeneratedRoutya()` | ✅ Supported and verified |
+| `AddRoutyaRequestHandler` / `AddRoutyaAsyncRequestHandler` / `AddRoutyaNotificationHandler` | ✅ Supported |
+| `AddRoutya(cfg, assembly)` assembly scanning | ❌ Not supported. Marked `[RequiresUnreferencedCode]`, so you get a build warning rather than a runtime surprise |
+
+### ⚠️ Register pipeline behaviours closed under Native AOT
+
+Microsoft's DI container **cannot construct an open generic service under Native AOT when a type
+argument is a value type**. This is a limitation of `Microsoft.Extensions.DependencyInjection`, not
+of Routya, but it affects any request whose response is `int`, `decimal`, `bool`, a `Guid`, an enum
+or any other struct:
+
+```C#
+// ❌ Throws under Native AOT for IRequest<decimal>, IRequest<int>, etc.
+services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+
+// ✅ Register each behaviour closed instead
+services.AddTransient<IPipelineBehavior<CalculateTotal, decimal>, LoggingBehavior<CalculateTotal, decimal>>();
+```
+
+Adding a closed registration *alongside* the open generic one does **not** help, because
+`GetServices` enumerates every registration for the service type and still tries to construct the
+open generic. The open generic registration has to be absent entirely.
+
+Reference type responses are unaffected.
+
+### Native AOT trades throughput for startup and size
+
+Native AOT is not a performance optimisation for dispatch. Measured on the same machine, source
+generated dispatch under Native AOT runs roughly **three to four times slower** than under the JIT,
+because AOT gives up tiered compilation and dynamic profile guided optimisation, and Routya's
+dispatch path is dense with interface calls that benefit from them.
+
+What AOT buys is startup time, a self contained binary of a few megabytes, and no runtime
+dependency. Choose it for those reasons, not for throughput.
 
 ---
 
