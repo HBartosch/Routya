@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Routya.Core.Abstractions;
 using Routya.Core.Dispatchers.Configurations;
@@ -17,18 +18,31 @@ namespace Routya.Core.Dispatchers
     {
         private readonly IRoutyaRequestDispatcher _requestDispatcher;
         private readonly IRoutyaNotificationDispatcher _notificationDispatcher;
+        private readonly IRoutyaStreamDispatcher _streamDispatcher;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DefaultRoutya"/> class.
         /// </summary>
         /// <param name="requestDispatcher">The dispatcher responsible for handling requests.</param>
         /// <param name="notificationDispatcher">The dispatcher responsible for handling notifications.</param>
+        /// <param name="streamDispatcher">The dispatcher responsible for handling stream requests.</param>
         public DefaultRoutya(
             IRoutyaRequestDispatcher requestDispatcher,
-            IRoutyaNotificationDispatcher notificationDispatcher)
+            IRoutyaNotificationDispatcher notificationDispatcher,
+            IRoutyaStreamDispatcher streamDispatcher)
         {
             _requestDispatcher = requestDispatcher;
             _notificationDispatcher = notificationDispatcher;
+            _streamDispatcher = streamDispatcher;
+        }
+
+        /// <inheritdoc />
+        public IAsyncEnumerable<TResponse> CreateStream<TRequest, TResponse>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+                where TRequest : IStreamRequest<TResponse>
+        {
+            return _streamDispatcher.CreateStream<TRequest, TResponse>(request, cancellationToken);
         }
 
         /// <inheritdoc />

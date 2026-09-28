@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Routya.Core.Abstractions
@@ -104,5 +105,35 @@ namespace Routya.Core.Abstractions
            TNotification notification,
            CancellationToken cancellationToken = default)
                where TNotification : INotification;
+
+        /// <summary>
+        /// Dispatches a stream request and returns the sequence of items its handler produces.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of request implementing <see cref="IStreamRequest{TResponse}"/>.</typeparam>
+        /// <typeparam name="TResponse">The type of each item produced.</typeparam>
+        /// <param name="request">The request to dispatch.</param>
+        /// <param name="cancellationToken">Cancellation token to observe while producing items.</param>
+        /// <returns>The sequence of items produced by the handler, after any registered behaviors.</returns>
+        /// <exception cref="System.InvalidOperationException">Thrown when no stream handler is registered for the request type.</exception>
+        /// <remarks>
+        /// <para>
+        /// Items are produced lazily. Nothing runs until the returned sequence is enumerated, and
+        /// nothing is buffered, so a consumer can begin processing before the handler has finished.
+        /// </para>
+        /// <para>
+        /// Registered <see cref="IStreamPipelineBehavior{TRequest, TResponse}"/> instances wrap the
+        /// whole enumeration, so they observe every item and any exception thrown part way through.
+        /// This is the difference from declaring <c>IRequest&lt;IAsyncEnumerable&lt;T&gt;&gt;</c>,
+        /// where the pipeline finishes as soon as the sequence is handed over.
+        /// </para>
+        /// <para>
+        /// Under <c>RoutyaDispatchScope.Scoped</c>, the dispatch scope lives for the duration of the
+        /// enumeration and is disposed when it completes or is abandoned.
+        /// </para>
+        /// </remarks>
+        IAsyncEnumerable<TResponse> CreateStream<TRequest, TResponse>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+                where TRequest : IStreamRequest<TResponse>;
     }
 }

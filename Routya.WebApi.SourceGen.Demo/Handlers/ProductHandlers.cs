@@ -1,4 +1,4 @@
-using Routya.Core.Abstractions;
+﻿using Routya.Core.Abstractions;
 
 namespace Routya.WebApi.SourceGen.Demo.Handlers;
 
@@ -6,10 +6,9 @@ public record GetProductQuery(int Id) : IRequest<Product?>;
 public record GetAllProductsQuery : IRequest<IReadOnlyList<Product>>;
 public record CreateProductCommand(string Name, decimal Price, int Stock) : IRequest<Product>;
 
-// Streaming workaround: IRequest<IAsyncEnumerable<T>> returns a Task<IAsyncEnumerable<T>>.
-// The caller awaits the task to get the enumerable, then streams it.
-// First-class IStreamRequest<T> support is planned for a future release.
-public record ExportProductsQuery : IRequest<IAsyncEnumerable<Product>>;
+// First class streaming. IStreamRequest<T> produces items lazily, and any registered
+// IStreamPipelineBehavior wraps the whole enumeration rather than just the handover.
+public record ExportProductsQuery : IStreamRequest<Product>;
 
 public class GetProductHandler(ProductStore store) : IAsyncRequestHandler<GetProductQuery, Product?>
 {
@@ -29,8 +28,8 @@ public class CreateProductHandler(ProductStore store) : IAsyncRequestHandler<Cre
         => Task.FromResult(store.Add(request.Name, request.Price, request.Stock));
 }
 
-public class ExportProductsHandler(ProductStore store) : IAsyncRequestHandler<ExportProductsQuery, IAsyncEnumerable<Product>>
+public class ExportProductsHandler(ProductStore store) : IStreamRequestHandler<ExportProductsQuery, Product>
 {
-    public Task<IAsyncEnumerable<Product>> HandleAsync(ExportProductsQuery request, CancellationToken ct)
-        => Task.FromResult(store.StreamAllAsync(ct));
+    public IAsyncEnumerable<Product> Handle(ExportProductsQuery request, CancellationToken ct)
+        => store.StreamAllAsync(ct);
 }

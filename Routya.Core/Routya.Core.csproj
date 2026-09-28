@@ -39,6 +39,15 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4" />
   </ItemGroup>
 
+  <!--
+    netstandard2.0 predates IAsyncEnumerable<T>, which the streaming API is built on. This package
+    supplies it, so streaming is available on every target framework rather than only some. The
+    netstandard2.1 and .NET targets have it in the base class library already.
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.4" />
+  </ItemGroup>
+
    <ItemGroup>
        <None Include="LICENSE" Pack="true" PackagePath="" />
 	   <None Include="..\README.md" Pack="true" PackagePath="" />

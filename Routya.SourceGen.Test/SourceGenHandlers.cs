@@ -130,3 +130,26 @@ public class TrackingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest,
         return await next(cancellationToken);
     }
 }
+
+// ── Streaming ───────────────────────────────────────────────────────────────
+// First class IStreamRequest, dispatched through the generated CreateStream member.
+
+public record CountProductsQuery(int Count) : IStreamRequest<int>;
+
+public class CountProductsHandler : IStreamRequestHandler<CountProductsQuery, int>
+{
+    public static int ItemsProduced { get; set; }
+
+    public async IAsyncEnumerable<int> Handle(
+        CountProductsQuery request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        for (var i = 1; i <= request.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+            ItemsProduced++;
+            yield return i;
+        }
+    }
+}

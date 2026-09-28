@@ -147,6 +147,52 @@ public class SourceGeneratorIntegrationTests
         Assert.NotEmpty(tracker.Calls);
     }
 
+    // ── Streaming ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddGeneratedRoutya_Registers_Stream_Handler()
+    {
+        var provider = BuildProvider();
+        var handler = provider.GetService<IStreamRequestHandler<CountProductsQuery, int>>();
+        Assert.NotNull(handler);
+        Assert.IsType<CountProductsHandler>(handler);
+    }
+
+    [Fact]
+    public async Task CreateStream_Yields_All_Items_In_Order()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+
+        var items = new List<int>();
+        await foreach (var item in routya.CreateStream(new CountProductsQuery(4)))
+        {
+            items.Add(item);
+        }
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, items);
+    }
+
+    [Fact]
+    public async Task CreateStream_Is_Lazy_And_Does_Not_Buffer()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+        CountProductsHandler.ItemsProduced = 0;
+
+        var stream = routya.CreateStream(new CountProductsQuery(5));
+        Assert.Equal(0, CountProductsHandler.ItemsProduced);
+
+        var seen = 0;
+        await foreach (var _ in stream)
+        {
+            seen++;
+
+            // The handler must not have run ahead of the consumer
+            Assert.Equal(seen, CountProductsHandler.ItemsProduced);
+        }
+
+        Assert.Equal(5, seen);
+    }
+
     // ── Fan out when a handler faults ────────────────────────────────────────
 
     [Fact]

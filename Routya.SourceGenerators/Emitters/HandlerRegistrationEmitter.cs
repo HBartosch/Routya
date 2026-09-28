@@ -45,7 +45,14 @@ namespace Routya.SourceGenerators.Emitters
                 var requestType = handler.RequestType.ToGeneratedName();
                 var responseType = handler.ResponseType!.ToGeneratedName();
                 
-                if (handler.IsAsync)
+                if (handler.IsStream)
+                {
+                    sb.AppendLine($"        /// <summary>Streams {requestType} through its handler.</summary>");
+                    sb.AppendLine($"        System.Collections.Generic.IAsyncEnumerable<{responseType}> CreateStream(");
+                    sb.AppendLine($"            {requestType} request,");
+                    sb.AppendLine($"            System.Threading.CancellationToken cancellationToken = default);");
+                }
+                else if (handler.IsAsync)
                 {
                     sb.AppendLine($"        /// <summary>Dispatches {requestType} to its handler.</summary>");
                     sb.AppendLine($"        System.Threading.Tasks.Task<{responseType}> SendAsync(");
@@ -96,9 +103,11 @@ namespace Routya.SourceGenerators.Emitters
                 foreach (var handler in requestHandlers)
                 {
                     var lifetime = GetLifetimeString(handler.Lifetime);
-                    var handlerInterface = handler.IsAsync
-                        ? $"IAsyncRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>"
-                        : $"IRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>";
+                    var handlerInterface = handler.IsStream
+                        ? $"IStreamRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>"
+                        : handler.IsAsync
+                            ? $"IAsyncRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>"
+                            : $"IRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>";
                     
                     // Register the concrete handler first
                     sb.AppendLine($"            services.Add{lifetime}<{handler.HandlerType.ToGeneratedName()}>();");

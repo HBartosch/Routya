@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 
 namespace Routya.SourceGenerators.Models
 {
@@ -29,6 +29,9 @@ namespace Routya.SourceGenerators.Models
 
         public bool IsAsync { get; set; }
         public bool IsNotification { get; set; }
+
+        /// <summary>Whether this handler implements IStreamRequestHandler and produces a sequence.</summary>
+        public bool IsStream { get; set; }
 
         /// <summary>
         /// Whether a typed member can be generated for this handler on the public IGeneratedRoutya

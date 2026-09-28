@@ -184,7 +184,73 @@ namespace Routya.Core.Extensions
                 sp.GetRequiredService<Dictionary<Type, List<NotificationHandlerInfo>>>(),
                 options));
 
+            services.AddSingleton<IRoutyaStreamDispatcher>(sp => new CompiledStreamDispatcher(
+                sp,
+                sp.GetRequiredService<Dictionary<Type, RequestHandlerInfo>>(),
+                options));
+
             services.AddSingleton<IRoutya, DefaultRoutya>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers a stream request handler with the specified lifetime, adding it to the registry
+        /// so dispatch can resolve it directly.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of request, implementing <see cref="IStreamRequest{TResponse}"/>.</typeparam>
+        /// <typeparam name="TResponse">The type of each item produced.</typeparam>
+        /// <typeparam name="THandler">The concrete handler type implementing <see cref="IStreamRequestHandler{TRequest, TResponse}"/>.</typeparam>
+        /// <param name="services">The <see cref="IServiceCollection"/> to add the handler to.</param>
+        /// <param name="lifetime">The service lifetime for the handler. Defaults to <see cref="ServiceLifetime.Scoped"/>.</param>
+        /// <returns>The <see cref="IServiceCollection"/> for method chaining.</returns>
+        /// <remarks>
+        /// <para>
+        /// Under <c>RoutyaDispatchScope.Scoped</c> the dispatch scope lives for the whole
+        /// enumeration, so a <see cref="ServiceLifetime.Scoped"/> handler may hold a scoped
+        /// dependency such as a <c>DbContext</c> across the stream.
+        /// </para>
+        /// <para>
+        /// Example:
+        /// <code>
+        /// services.AddRoutyaStreamRequestHandler&lt;ExportProducts, Product, ExportProductsHandler&gt;(ServiceLifetime.Scoped);
+        /// </code>
+        /// </para>
+        /// </remarks>
+        public static IServiceCollection AddRoutyaStreamRequestHandler<TRequest, TResponse,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
+            this IServiceCollection services,
+            ServiceLifetime lifetime = ServiceLifetime.Scoped)
+            where TRequest : IStreamRequest<TResponse>
+            where THandler : class, IStreamRequestHandler<TRequest, TResponse>
+        {
+            var handlerInterface = typeof(IStreamRequestHandler<TRequest, TResponse>);
+            var handlerType = typeof(THandler);
+
+            var registry = GetOrAddRequestRegistry(services);
+
+            registry[handlerInterface] = new RequestHandlerInfo
+            {
+                ConcreteType = handlerType,
+                Lifetime = lifetime,
+                IsAsync = true
+            };
+
+            switch (lifetime)
+            {
+                case ServiceLifetime.Singleton:
+                    services.AddSingleton(handlerInterface, handlerType);
+                    services.AddSingleton(handlerType);
+                    break;
+                case ServiceLifetime.Scoped:
+                    services.AddScoped(handlerInterface, handlerType);
+                    services.AddScoped(handlerType);
+                    break;
+                case ServiceLifetime.Transient:
+                    services.AddTransient(handlerInterface, handlerType);
+                    services.AddTransient(handlerType);
+                    break;
+            }
 
             return services;
         }

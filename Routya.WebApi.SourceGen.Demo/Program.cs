@@ -1,4 +1,4 @@
-using Routya.Generated;
+﻿using Routya.Generated;
 using Routya.Core.Abstractions;
 using Routya.WebApi.SourceGen.Demo;
 using Routya.WebApi.SourceGen.Demo.Behaviors;
@@ -41,14 +41,11 @@ app.MapPost("/products", async (CreateProductRequest body, IGeneratedRoutya rout
     return Results.Created($"/products/{product.Id}", product);
 });
 
-// GET /products/stream — stream all products one by one (streaming workaround via IRequest<IAsyncEnumerable<T>>)
-// ASP.NET Core natively streams IAsyncEnumerable<T> returned from a route handler.
-app.MapGet("/products/stream", async (IGeneratedRoutya routya, CancellationToken ct) =>
-{
-    // Await the task to get the IAsyncEnumerable, then return it — ASP.NET Core streams the rest.
-    var stream = await routya.SendAsync(new ExportProductsQuery(), ct);
-    return stream;
-});
+// GET /products/stream — stream all products one by one via IStreamRequest<T>.
+// ASP.NET Core natively streams IAsyncEnumerable<T> returned from a route handler, so the
+// generated CreateStream result can be returned directly with nothing buffered.
+app.MapGet("/products/stream", (IGeneratedRoutya routya, CancellationToken ct)
+    => routya.CreateStream(new ExportProductsQuery(), ct));
 
 // POST /orders/{id}/shipped — fan-out notification to multiple handlers
 app.MapPost("/orders/{id:int}/shipped", async (int id, ShipOrderRequest body, IGeneratedRoutya routya, CancellationToken ct) =>

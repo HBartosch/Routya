@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Routya.SourceGenerators.Emitters;
@@ -19,6 +19,7 @@ namespace Routya.SourceGenerators.Generators
         private const string IRequestHandlerName = "Routya.Core.Abstractions.IRequestHandler";
         private const string IAsyncRequestHandlerName = "Routya.Core.Abstractions.IAsyncRequestHandler";
         private const string INotificationHandlerName = "Routya.Core.Abstractions.INotificationHandler";
+        private const string IStreamRequestHandlerName = "Routya.Core.Abstractions.IStreamRequestHandler";
 
         private static bool IsRequestHandler(INamedTypeSymbol iface)
             => iface.IsRoutyaInterface("IRequestHandler", arity: 2);
@@ -28,6 +29,9 @@ namespace Routya.SourceGenerators.Generators
 
         private static bool IsNotificationHandler(INamedTypeSymbol iface)
             => iface.IsRoutyaInterface("INotificationHandler", arity: 1);
+
+        private static bool IsStreamRequestHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("IStreamRequestHandler", arity: 2);
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
@@ -72,7 +76,8 @@ namespace Routya.SourceGenerators.Generators
             var interfaces = symbol.AllInterfaces;
             foreach (var iface in interfaces)
             {
-                if (IsRequestHandler(iface) || IsAsyncRequestHandler(iface) || IsNotificationHandler(iface))
+                if (IsRequestHandler(iface) || IsAsyncRequestHandler(iface)
+                    || IsNotificationHandler(iface) || IsStreamRequestHandler(iface))
                 {
                     return symbol;
                 }
@@ -121,6 +126,20 @@ namespace Routya.SourceGenerators.Generators
                             DiagnosticDescriptors.HandlerDiscovered,
                             Location.None,
                             "AsyncRequest",
+                            handler.Name,
+                            descriptor.RequestType.Name));
+                    }
+                    else if (IsStreamRequestHandler(iface))
+                    {
+                        var descriptor = CreateRequestHandlerDescriptor(handler, iface, isAsync: true);
+                        descriptor.IsStream = true;
+                        descriptor.HandlerInterfaceName = IStreamRequestHandlerName;
+                        requestHandlers.Add(descriptor);
+
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.HandlerDiscovered,
+                            Location.None,
+                            "StreamRequest",
                             handler.Name,
                             descriptor.RequestType.Name));
                     }

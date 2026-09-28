@@ -52,6 +52,7 @@ public class MyController : ControllerBase
 - ✅ Clean interface-based abstraction for Requests/Responses and Notifications
 - 🚀 **High-performance dispatching** - Competitive with MediatR while offering more flexibility
 - **⚡ Source generation** - Compile-time code generation for maximum speed
+- **🌊 Streaming** - `IStreamRequest<T>` with lazy, unbuffered `IAsyncEnumerable<T>` and behaviours that wrap the whole enumeration. See [Streaming](#-streaming)
 - **🔬 Trimming and Native AOT** - No IL warnings, verified with a running Native AOT binary. See [Trimming and Native AOT](#-trimming-and-native-aot)
 - ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
 - 🧩 Pipeline behavior support for cross-cutting concerns
@@ -463,6 +464,96 @@ this context before a previous operation completed` when that happens. The extra
 
 If your parallel handlers need to share scoped state, they are not independent, and
 `PublishAsync` is the correct choice.
+
+---
+
+## 🌊 Streaming
+
+Use `IStreamRequest<TResponse>` when a handler produces a sequence rather than a single response.
+Items are produced lazily and nothing is buffered, so a consumer can start processing before the
+handler has finished.
+
+```C#
+public record ExportProducts(int CategoryId) : IStreamRequest<Product>;
+
+public class ExportProductsHandler(AppDbContext db) : IStreamRequestHandler<ExportProducts, Product>
+{
+    public async IAsyncEnumerable<Product> Handle(
+        ExportProducts request,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var product in db.Products
+            .Where(p => p.CategoryId == request.CategoryId)
+            .AsAsyncEnumerable()
+            .WithCancellation(ct))
+        {
+            yield return product;
+        }
+    }
+}
+```
+
+Register it and dispatch:
+
+```C#
+services.AddRoutyaStreamRequestHandler<ExportProducts, Product, ExportProductsHandler>(ServiceLifetime.Scoped);
+
+// Runtime dispatch
+await foreach (var product in routya.CreateStream<ExportProducts, Product>(new ExportProducts(7), ct))
+{
+    // ...
+}
+
+// Source generated — no generic arguments needed
+await foreach (var product in routya.CreateStream(new ExportProducts(7), ct))
+{
+    // ...
+}
+```
+
+ASP.NET Core streams `IAsyncEnumerable<T>` natively, so a minimal API endpoint can return the
+result directly with nothing buffered:
+
+```C#
+app.MapGet("/products/stream", (IGeneratedRoutya routya, CancellationToken ct)
+    => routya.CreateStream(new ExportProducts(7), ct));
+```
+
+### Why not `IRequest<IAsyncEnumerable<T>>`?
+
+That shape works, but it is not streaming in any useful sense. The handler returns a *task* that
+hands back a sequence, so the pipeline finishes the moment the sequence is handed over, **before a
+single item has been produced**. A behaviour wrapped around it cannot observe items, cannot catch an
+exception thrown part way through, and times only the handover.
+
+`IStreamPipelineBehavior<TRequest, TResponse>` wraps the enumeration itself:
+
+```C#
+public class CountingBehavior<TRequest, TResponse> : IStreamPipelineBehavior<TRequest, TResponse>
+{
+    public async IAsyncEnumerable<TResponse> Handle(
+        TRequest request,
+        StreamHandlerDelegate<TResponse> next,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var count = 0;
+
+        await foreach (var item in next(ct).WithCancellation(ct))
+        {
+            count++;
+            yield return item;
+        }
+
+        Console.WriteLine($"streamed {count} items");
+    }
+}
+```
+
+### Scope lifetime
+
+Under `RoutyaDispatchScope.Scoped`, the dispatch scope lives for the **whole enumeration** and is
+disposed when it completes or the consumer abandons it. A handler may therefore hold a `DbContext`
+across the stream. Each call to `CreateStream` gets its own scope.
 
 ---
 

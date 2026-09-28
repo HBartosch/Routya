@@ -69,7 +69,11 @@ internal static class DispatcherEmitter
         // IRequestHandler exposes Handle and IAsyncRequestHandler exposes HandleAsync, so the two
         // cannot share a dispatch body. The generated interface likewise declares Send for a
         // synchronous handler and SendAsync for an asynchronous one.
-        if (handler.IsAsync)
+        if (handler.IsStream)
+        {
+            EmitStreamDispatchMethod(sb, handler);
+        }
+        else if (handler.IsAsync)
         {
             EmitAsyncRequestDispatchMethod(sb, handler);
         }
@@ -77,6 +81,47 @@ internal static class DispatcherEmitter
         {
             EmitSyncRequestDispatchMethod(sb, handler);
         }
+    }
+
+    private static void EmitStreamDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
+    {
+        var requestTypeName = handler.RequestType.ToGeneratedName();
+        var responseTypeName = handler.ResponseType!.ToGeneratedName();
+        var behaviorType = $"IStreamPipelineBehavior<{requestTypeName}, {responseTypeName}>";
+
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine($"        /// Optimized streaming dispatch for {requestTypeName}.");
+        sb.AppendLine("        /// Items are produced lazily and nothing is buffered.");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine($"        public System.Collections.Generic.IAsyncEnumerable<{responseTypeName}> CreateStream(");
+        sb.AppendLine($"            {requestTypeName} request,");
+        sb.AppendLine($"            CancellationToken cancellationToken = default)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (request == null) throw new ArgumentNullException(nameof(request));");
+        sb.AppendLine();
+        sb.AppendLine($"            var resolvedBehaviors = _serviceProvider.GetServices<{behaviorType}>();");
+        sb.AppendLine($"            var behaviors = resolvedBehaviors as {behaviorType}[] ?? resolvedBehaviors.ToArray();");
+        sb.AppendLine($"            var handler = _serviceProvider.GetRequiredService<{handler.ConcreteType}>();");
+        sb.AppendLine();
+        sb.AppendLine("            if (behaviors.Length == 0)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                // No behaviors - straight to the handler");
+        sb.AppendLine("                return handler.Handle(request, cancellationToken);");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine($"            StreamHandlerDelegate<{responseTypeName}> next = (ct) => handler.Handle(request, ct);");
+        sb.AppendLine();
+        sb.AppendLine("            // Walked in reverse so behaviors execute in registration order");
+        sb.AppendLine("            for (int i = behaviors.Length - 1; i >= 0; i--)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                var currentBehavior = behaviors[i];");
+        sb.AppendLine("                var currentDelegate = next;");
+        sb.AppendLine("                next = (ct) => currentBehavior.Handle(request, currentDelegate, ct);");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            return next(cancellationToken);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
     }
 
     private static void EmitAsyncRequestDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
