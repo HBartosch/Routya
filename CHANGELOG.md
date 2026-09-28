@@ -75,6 +75,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   and usable under trimming; the overload taking assemblies carries the scanning annotation.
   Existing source and existing compiled callers are both unaffected, because overload resolution
   prefers the first in normal form
+- `Routya.Events` no longer produces a package. It is upcoming work with no implementation, but
+  `GeneratePackageOnBuild` was writing a `.nupkg` carrying the real `Routya.Events` package id on
+  every build. Nothing in CI pushed it, but a published NuGet version can only be delisted, never
+  withdrawn, so an accidental push would have squatted the id with an empty assembly. It is marked
+  `IsPackable=false` until there is something to ship
 - The build workflow no longer runs BenchmarkDotNet. Timings are meaningless on a shared runner:
   the MediatR baseline was observed drifting by a third between runs on identical code. The project
   is still built so it cannot rot, and performance is guarded by the allocation budget tests
