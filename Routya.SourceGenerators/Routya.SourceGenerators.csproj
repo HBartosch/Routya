@@ -29,6 +29,15 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
   </ItemGroup>
 
+  <!--
+    Release tracking files for the ROUTYA diagnostics. RS2008 requires every rule to be declared
+    here, which keeps the diagnostic ids documented and makes an accidental id change visible.
+  -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Include LICENSE file in package -->
     <None Include="..\LICENSE" Pack="true" PackagePath="" />

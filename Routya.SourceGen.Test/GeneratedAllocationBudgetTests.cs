@@ -36,7 +36,7 @@ public class GeneratedAllocationBudgetTests
         var request = new AllocGenPing("x");
 
         var bytes = GeneratedAllocationProbe.PerOperation(
-            () => routya.SendAsync(request).GetAwaiter().GetResult());
+            () => routya.SendAsync(request));
 
         AssertWithinBudget(bytes, SendAsyncBudget, "Generated SendAsync");
     }
@@ -59,7 +59,7 @@ public class GeneratedAllocationBudgetTests
         var notification = new AllocGenEvent(1);
 
         var bytes = GeneratedAllocationProbe.PerOperation(
-            () => routya.PublishAsync(notification).GetAwaiter().GetResult());
+            () => routya.PublishAsync(notification));
 
         AssertWithinBudget(bytes, PublishAsyncBudget, "Generated PublishAsync with two handlers");
     }
@@ -111,6 +111,19 @@ public static class GeneratedAllocationProbe
 
         return (after - before) / iterations;
     }
+
+    /// <summary>
+    /// Overload for operations that return a task.
+    /// </summary>
+    /// <remarks>
+    /// The blocking wait lives here rather than in the test method deliberately. The measured
+    /// operation has to complete synchronously on this thread, because
+    /// GetAllocatedBytesForCurrentThread counts per thread and a continuation resumed on the thread
+    /// pool would not be counted. Every handler used by these tests completes synchronously, so the
+    /// task is already finished and nothing actually blocks.
+    /// </remarks>
+    public static long PerOperation(Func<Task> operation, int warmup = 500, int iterations = 2000)
+        => PerOperation(() => operation().GetAwaiter().GetResult(), warmup, iterations);
 }
 
 // Allocation test models. Handlers are deliberately trivial so the measurement reflects dispatch

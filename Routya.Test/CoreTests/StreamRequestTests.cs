@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
 using Routya.Core.Extensions;
@@ -199,16 +199,17 @@ public class StreamRequestTests
     }
 
     [Fact]
-    public void CreateStream_Throws_When_No_Handler_Is_Registered()
+    public async Task CreateStream_Throws_When_No_Handler_Is_Registered()
     {
         var services = new ServiceCollection();
         services.AddRoutya();
         var routya = services.BuildServiceProvider().GetRequiredService<IRoutya>();
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            var enumerator = routya.CreateStream<Unhandled, int>(new Unhandled()).GetAsyncEnumerator();
-            enumerator.MoveNextAsync().GetAwaiter().GetResult();
+            await foreach (var _ in routya.CreateStream<Unhandled, int>(new Unhandled()))
+            {
+            }
         });
 
         Assert.Contains("No stream handler found", exception.Message);

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 ﻿using Xunit.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
@@ -55,7 +55,7 @@ public class AllocationBudgetTests
         var request = new AllocPing("x");
 
         var bytes = AllocationProbe.PerOperation(
-            () => routya.SendAsync<AllocPing, string>(request).GetAwaiter().GetResult());
+            () => routya.SendAsync<AllocPing, string>(request));
 
         AssertWithinBudget(bytes, RootSingletonSendAsyncBudget, "SendAsync with a Singleton handler");
     }
@@ -67,7 +67,7 @@ public class AllocationBudgetTests
         var notification = new AllocEvent(1);
 
         var bytes = AllocationProbe.PerOperation(
-            () => routya.PublishAsync(notification).GetAwaiter().GetResult());
+            () => routya.PublishAsync(notification));
 
         AssertWithinBudget(bytes, RootSingletonPublishBudget, "PublishAsync with two Singleton handlers");
     }
@@ -79,7 +79,7 @@ public class AllocationBudgetTests
         var request = new AllocPing("x");
 
         var bytes = AllocationProbe.PerOperation(
-            () => routya.SendAsync<AllocPing, string>(request).GetAwaiter().GetResult());
+            () => routya.SendAsync<AllocPing, string>(request));
 
         AssertWithinBudget(bytes, ScopedSendAsyncBudget, "SendAsync with a Scoped handler");
     }
@@ -91,7 +91,7 @@ public class AllocationBudgetTests
         var notification = new AllocEvent(1);
 
         var bytes = AllocationProbe.PerOperation(
-            () => routya.PublishAsync(notification).GetAwaiter().GetResult());
+            () => routya.PublishAsync(notification));
 
         AssertWithinBudget(bytes, ScopedPublishBudget, "PublishAsync with two Scoped handlers");
     }
@@ -103,7 +103,7 @@ public class AllocationBudgetTests
         var notification = new AllocEvent(1);
 
         var bytes = AllocationProbe.PerOperation(
-            () => routya.PublishParallelAsync(notification).GetAwaiter().GetResult());
+            () => routya.PublishParallelAsync(notification));
 
         AssertWithinBudget(bytes, ScopedParallelPublishBudget, "PublishParallelAsync with two Scoped handlers");
     }
@@ -181,6 +181,19 @@ public static class AllocationProbe
 
         return (after - before) / iterations;
     }
+
+    /// <summary>
+    /// Overload for operations that return a task.
+    /// </summary>
+    /// <remarks>
+    /// The blocking wait lives here rather than in the test method deliberately. The measured
+    /// operation has to complete synchronously on this thread, because
+    /// GetAllocatedBytesForCurrentThread counts per thread and a continuation resumed on the thread
+    /// pool would not be counted. Every handler used by these tests completes synchronously, so the
+    /// task is already finished and nothing actually blocks.
+    /// </remarks>
+    public static long PerOperation(Func<Task> operation, int warmup = 500, int iterations = 2000)
+        => PerOperation(() => operation().GetAwaiter().GetResult(), warmup, iterations);
 }
 
 // Test models, named distinctly so they do not share dispatch caches with other test classes
