@@ -14,8 +14,8 @@ namespace Routya.Core.Abstractions
     /// <para>Handlers should be designed to be independent and not rely on execution order (unless using sequential publishing).</para>
     /// <para>
     /// Performance considerations:
-    /// - Sequential publishing: Handlers execute in registration order, ~111ns for Singleton handlers
-    /// - Parallel publishing: Handlers execute concurrently, ~144ns for Singleton handlers
+    /// - Sequential publishing: handlers execute in registration order and share one dispatch scope
+    /// - Parallel publishing: handlers execute concurrently, each in its own dispatch scope
     /// - Singleton handlers are ~50% faster than Scoped handlers for notifications
     /// </para>
     /// <para>

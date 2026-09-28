@@ -240,9 +240,9 @@ namespace Routya.Core.Extensions
         /// <para>
         /// <b>Lifetime Recommendations:</b>
         /// <list type="bullet">
-        /// <item><description><b>Singleton:</b> Best performance (~334ns). Use for stateless handlers. Must be thread-safe.</description></item>
-        /// <item><description><b>Scoped:</b> Safe for handlers with DbContext or scoped dependencies (~395ns). Default and recommended.</description></item>
-        /// <item><description><b>Transient:</b> New instance every time (~336ns). Use when you need maximum isolation.</description></item>
+        /// <item><description><b>Singleton:</b> Best performance, about 104 bytes per dispatch with the Root scope. Use for stateless handlers. Must be thread-safe.</description></item>
+        /// <item><description><b>Scoped:</b> Safe for handlers with DbContext or scoped dependencies. Default and recommended.</description></item>
+        /// <item><description><b>Transient:</b> New instance every time. Use when you need maximum isolation.</description></item>
         /// </list>
         /// </para>
         /// <para>
@@ -321,9 +321,9 @@ namespace Routya.Core.Extensions
         /// <para>
         /// <b>Performance Characteristics:</b>
         /// <list type="bullet">
-        /// <item><description><b>Singleton:</b> ~398ns per request. Fastest option for stateless async handlers.</description></item>
-        /// <item><description><b>Scoped:</b> ~476ns per request. Safe for handlers using DbContext or other scoped services.</description></item>
-        /// <item><description><b>Transient:</b> ~418ns per request. New instance for every dispatch, maximum isolation.</description></item>
+        /// <item><description><b>Singleton:</b> about 208 bytes per request with the Root scope. Fastest option for stateless async handlers.</description></item>
+        /// <item><description><b>Scoped:</b> about 544 bytes per request. Safe for handlers using DbContext or other scoped services.</description></item>
+        /// <item><description><b>Transient:</b> new instance for every dispatch, maximum isolation.</description></item>
         /// </list>
         /// </para>
         /// <para>
@@ -414,10 +414,9 @@ namespace Routya.Core.Extensions
         /// <para>
         /// <b>Performance Characteristics:</b>
         /// <list type="bullet">
-        /// <item><description><b>Singleton Sequential:</b> ~111ns per publish (30% faster than MediatR, 56% less memory)</description></item>
-        /// <item><description><b>Singleton Parallel:</b> ~144ns per publish (9% faster than MediatR, 29% less memory)</description></item>
-        /// <item><description><b>Scoped Sequential:</b> ~238ns per publish (scoped DI overhead)</description></item>
-        /// <item><description><b>Scoped Parallel:</b> ~266ns per publish (scoped + parallel overhead)</description></item>
+        /// <item><description><b>Singleton Sequential:</b> about 32 bytes per publish with the Root scope</description></item>
+        /// <item><description><b>Scoped Sequential:</b> about 392 bytes per publish, all handlers sharing one scope</description></item>
+        /// <item><description><b>Scoped Parallel:</b> about 824 bytes per publish, each handler in its own scope</description></item>
         /// </list>
         /// </para>
         /// <para>

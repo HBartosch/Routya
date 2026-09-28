@@ -10,7 +10,8 @@
     /// <para>For async operations, use <see cref="IAsyncRequestHandler{TRequest, TResponse}"/> instead.</para>
     /// <para>Each request type should have exactly one handler implementation registered in the DI container.</para>
     /// <para>
-    /// Performance: Synchronous handlers are ~10% faster than async handlers for simple operations (~334ns vs ~398ns).
+    /// Synchronous handlers allocate roughly half as much as asynchronous ones for simple operations,
+    /// about 104 bytes per dispatch against about 208, because no Task machinery is involved.
     /// However, pipeline behaviors will still execute asynchronously.
     /// </para>
     /// <para>
