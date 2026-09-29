@@ -20,6 +20,7 @@ namespace Routya.SourceGenerators.Generators
         private const string IAsyncRequestHandlerName = "Routya.Core.Abstractions.IAsyncRequestHandler";
         private const string INotificationHandlerName = "Routya.Core.Abstractions.INotificationHandler";
         private const string IStreamRequestHandlerName = "Routya.Core.Abstractions.IStreamRequestHandler";
+        private const string RoutyaCoreAssemblyName = "Routya.Core";
 
         private static bool IsRequestHandler(INamedTypeSymbol iface)
             => iface.IsRoutyaInterface("IRequestHandler", arity: 2);
@@ -91,14 +92,21 @@ namespace Routya.SourceGenerators.Generators
             ImmutableArray<INamedTypeSymbol?> handlers,
             SourceProductionContext context)
         {
-            if (handlers.IsDefaultOrEmpty)
-                return;
-
+            // Deliberately no early return on an empty local handler set. A thin API project that
+            // holds no handlers of its own but references an Application project that does is the
+            // normal Clean Architecture layout, and returning here would generate nothing for it.
             var requestHandlers = new List<HandlerDescriptor>();
             var notificationHandlers = new List<HandlerDescriptor>();
 
+            // Handlers declared in this compilation come from the syntax provider. Handlers in
+            // referenced assemblies have no syntax tree here, so they have to be read from metadata.
+            var allHandlers = handlers
+                .Where(h => h is not null)
+                .Concat(GetHandlersFromReferencedAssemblies(compilation, context))
+                .ToList();
+
             // Analyze each handler
-            foreach (var handler in handlers)
+            foreach (var handler in allHandlers)
             {
                 if (handler is null)
                     continue;
@@ -253,6 +261,133 @@ namespace Routya.SourceGenerators.Generators
                 Lifetime = DetectLifetime(handler),
                 HandlerInterfaceName = INotificationHandlerName
             };
+        }
+
+        /// <summary>
+        /// Finds Routya handlers in referenced assemblies, which the syntax provider cannot see
+        /// because they have no syntax tree in this compilation.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is what makes a multiple project solution work. In the common Clean Architecture
+        /// layout the handlers live in an Application project and the generator runs in the Web or
+        /// API project, so without this every handler is invisible.
+        /// </para>
+        /// <para>
+        /// Only assemblies that themselves reference Routya.Core are walked. Everything else,
+        /// including the whole base class library, is skipped on an assembly identity check before
+        /// any type is enumerated, which keeps the cost proportional to the number of projects that
+        /// actually use Routya rather than to the size of the reference closure.
+        /// </para>
+        /// </remarks>
+        private static IEnumerable<INamedTypeSymbol> GetHandlersFromReferencedAssemblies(
+            Compilation compilation,
+            SourceProductionContext context)
+        {
+            var found = new List<INamedTypeSymbol>();
+
+            foreach (var reference in compilation.References)
+            {
+                if (!(compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly))
+                    continue;
+
+                if (!ReferencesRoutyaCore(assembly))
+                    continue;
+
+                foreach (var type in GetAllTypes(assembly.GlobalNamespace))
+                {
+                    if (type.IsAbstract || type.TypeKind == TypeKind.Interface)
+                        continue;
+
+                    if (!ImplementsAnyHandlerInterface(type))
+                        continue;
+
+                    // Generated registration lives in the consuming assembly, so a handler that is
+                    // not visible from here cannot be referenced by it. Say so rather than leaving
+                    // the user to find a missing service at runtime.
+                    if (!type.IsExternallyVisible())
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.ReferencedHandlerNotAccessible,
+                            Location.None,
+                            type.Name,
+                            assembly.Name));
+
+                        continue;
+                    }
+
+                    found.Add(type);
+                }
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Whether an assembly references Routya.Core, and so could contain handlers.
+        /// </summary>
+        private static bool ReferencesRoutyaCore(IAssemblySymbol assembly)
+        {
+            // Routya.Core itself declares the interfaces but no handlers
+            if (assembly.Name == RoutyaCoreAssemblyName)
+                return false;
+
+            foreach (var module in assembly.Modules)
+            {
+                foreach (var referenced in module.ReferencedAssemblies)
+                {
+                    if (referenced.Name == RoutyaCoreAssemblyName)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<INamedTypeSymbol> GetAllTypes(INamespaceSymbol root)
+        {
+            foreach (var type in root.GetTypeMembers())
+            {
+                foreach (var nested in GetTypeAndNested(type))
+                {
+                    yield return nested;
+                }
+            }
+
+            foreach (var child in root.GetNamespaceMembers())
+            {
+                foreach (var type in GetAllTypes(child))
+                {
+                    yield return type;
+                }
+            }
+        }
+
+        private static IEnumerable<INamedTypeSymbol> GetTypeAndNested(INamedTypeSymbol type)
+        {
+            yield return type;
+
+            foreach (var nested in type.GetTypeMembers())
+            {
+                foreach (var inner in GetTypeAndNested(nested))
+                {
+                    yield return inner;
+                }
+            }
+        }
+
+        private static bool ImplementsAnyHandlerInterface(INamedTypeSymbol type)
+        {
+            foreach (var iface in type.AllInterfaces)
+            {
+                if (IsRequestHandler(iface) || IsAsyncRequestHandler(iface)
+                    || IsNotificationHandler(iface) || IsStreamRequestHandler(iface))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static ServiceLifetime DetectLifetime(INamedTypeSymbol handler)

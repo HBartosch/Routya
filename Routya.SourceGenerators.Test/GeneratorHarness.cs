@@ -1,4 +1,5 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
+using System.IO;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Routya.SourceGenerators.Generators;
@@ -18,7 +19,53 @@ public static class GeneratorHarness
 {
     private static readonly ImmutableArray<MetadataReference> References = BuildReferences();
 
-    public static GeneratorRunResult Run(string source)
+    /// <summary>
+    /// Compiles <paramref name="referencedSource"/> into a separate assembly, then runs the
+    /// generator over <paramref name="source"/> with that assembly referenced.
+    /// </summary>
+    /// <remarks>
+    /// This is how a multiple project solution actually looks to the generator: the handler lives
+    /// in another assembly and has no syntax tree in the compilation being generated for. A single
+    /// source string cannot reproduce that, because everything shares one compilation.
+    /// </remarks>
+    public static GeneratorRunResult RunWithReferencedAssembly(string referencedSource, string source)
+    {
+        var referencedCompilation = CSharpCompilation.Create(
+            assemblyName: "Routya.GeneratorHarness.Referenced",
+            syntaxTrees: new[] { CSharpSyntaxTree.ParseText(referencedSource, new CSharpParseOptions(LanguageVersion.Latest)) },
+            references: References,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var referencedErrors = referencedCompilation
+            .GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
+
+        if (!referencedErrors.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                "The referenced source does not compile on its own: "
+                + string.Join(" | ", referencedErrors.Select(d => $"{d.Id}: {d.GetMessage()}")));
+        }
+
+        using var peStream = new MemoryStream();
+        var emitResult = referencedCompilation.Emit(peStream);
+
+        if (!emitResult.Success)
+        {
+            throw new InvalidOperationException(
+                "The referenced source failed to emit: "
+                + string.Join(" | ", emitResult.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
+        }
+
+        peStream.Position = 0;
+
+        return Run(source, References.Add(MetadataReference.CreateFromStream(peStream)));
+    }
+
+    public static GeneratorRunResult Run(string source) => Run(source, References);
+
+    private static GeneratorRunResult Run(string source, ImmutableArray<MetadataReference> references)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(
             source,
@@ -27,7 +74,7 @@ public static class GeneratorHarness
         var compilation = CSharpCompilation.Create(
             assemblyName: "Routya.GeneratorHarness",
             syntaxTrees: new[] { syntaxTree },
-            references: References,
+            references: references,
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));

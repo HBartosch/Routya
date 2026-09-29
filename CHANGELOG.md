@@ -8,6 +8,23 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The source generator now finds handlers in referenced assemblies.** It previously only saw
+  handlers declared in the compilation it was generating for, because the syntax provider can only
+  see syntax trees in that compilation. In the usual Clean Architecture layout, where handlers live
+  in an Application project and the generator runs in the Web or API project, that meant every
+  handler was invisible and `AddGeneratedRoutya` registered nothing. Handlers are now also read from
+  the metadata of referenced assemblies.
+
+  Only assemblies that themselves reference `Routya.Core` are walked, checked on assembly identity
+  before any type is enumerated, so the cost is proportional to the number of projects actually
+  using Routya rather than to the size of the reference closure.
+- `ROUTYA006` warning when a handler in a referenced assembly is not public. Generated registration
+  code lives in the consuming assembly, so such a handler is genuinely unreachable from it. It is
+  skipped with a diagnostic naming the handler and the assembly, rather than going silently missing
+  at runtime.
+
 ---
 
 ## [4.0.0] — 2026-09-28
