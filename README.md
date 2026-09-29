@@ -1,4 +1,4 @@
-# Routya
+﻿# Routya
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/dotnet.yml?label=CI&style=flat-square)
 ![CI](https://img.shields.io/github/actions/workflow/status/hbartosch/routya/build-and-test.yml?label=Tests&style=flat-square)
 [![NuGet](https://img.shields.io/nuget/v/Routya.Core)](https://www.nuget.org/packages/Routya.Core)
@@ -11,12 +11,12 @@ It provides a flexible way to route requests/responses and notifications to thei
 
 ---
 
-## ⚡ **NEW: v3.0 Source Generator - 46% Faster!**
+## ⚡ **Source Generator: compile time dispatch**
 
-Get **compile-time code generation** for zero-overhead dispatching:
+Get **compile-time code generation** with no reflection on the dispatch path:
 
 ```bash
-dotnet add package Routya.SourceGenerators --version 3.0.0
+dotnet add package Routya.SourceGenerators --version 4.0.0
 ```
 
 ```csharp
@@ -37,22 +37,24 @@ public class MyController : ControllerBase
 }
 ```
 
-**Performance:**
-- ⚡ **46% faster** than MediatR on notifications
+**Why use it:**
+- 📉 **Less memory than MediatR** - 272 B per notification publish against 600 B, and 976 B per request against 1008 B. Allocations are deterministic, so these hold on any machine
 - 🔥 **Zero reflection** - all dispatch code generated at compile-time
 - 📦 **Zero dictionary lookups** - direct method calls
 - 🎯 **Full IntelliSense** - type-specific interface with your exact methods
+- 🔬 **Trimming and Native AOT ready** - verified with a running native binary
 
-📖 **[Getting Started Guide →](./GETTING_STARTED_V3.md)** | 📦 **[Release Notes →](./RELEASE_NOTES_V3.md)** | 📚 **[Full Docs →](./Routya.SourceGenerators/README.md)**
+📖 **[Getting Started Guide →](./docs/GETTING_STARTED_V3.md)** | 📦 **[Changelog →](./CHANGELOG.md)** | 📚 **[Source Generator Docs →](./Routya.SourceGenerators/README.md)** | 🗂️ **[All docs →](./docs/)**
 
 ---
 
 ## ✨ Features
 
 - ✅ Clean interface-based abstraction for Requests/Responses and Notifications
-- 🚀 **High-performance dispatching** - Competitive with MediatR while offering more flexibility
-- **⚡ NEW: Source generation** - Compile-time code generation for maximum speed
-- **🌊 NEW: Streaming support** - `IAsyncEnumerable<T>` for large datasets
+- 🚀 **Low allocation dispatching** - Less memory per dispatch than MediatR, with more lifetime flexibility
+- **⚡ Source generation** - Compile-time code generation for maximum speed
+- **🌊 Streaming** - `IStreamRequest<T>` with lazy, unbuffered `IAsyncEnumerable<T>` and behaviours that wrap the whole enumeration. See [Streaming](#-streaming)
+- **🔬 Trimming and Native AOT** - No IL warnings, verified with a running Native AOT binary. See [Trimming and Native AOT](#-trimming-and-native-aot)
 - ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
 - 🧩 Pipeline behavior support for cross-cutting concerns
 - 🔄 Supports both **sequential** and **parallel** notification dispatching
@@ -64,17 +66,58 @@ public class MyController : ControllerBase
 
 ## 📦 NuGet Packages
 
-### v3.0 - Source Generator (Recommended for new projects)
+### Source Generator (recommended for new projects)
 ```bash
-dotnet add package Routya.SourceGenerators --version 3.0.0
+dotnet add package Routya.SourceGenerators --version 4.0.0
 ```
-Includes `Routya.Core` automatically.
+Includes `Routya.Core` automatically. Compile time dispatch, no reflection, and the only option that
+is verified under trimming and Native AOT.
 
-### v2.x - Runtime Dispatcher
+### Runtime Dispatcher
 ```bash
-dotnet add package Routya.Core --version 2.0.0
+dotnet add package Routya.Core --version 4.0.0
 ```
 Use for existing projects or when runtime flexibility is needed.
+
+### Everything in one package
+```bash
+dotnet add package Routya --version 4.0.0
+```
+Pulls in both `Routya.Core` and `Routya.SourceGenerators`.
+
+### ⚠️ Breaking Changes in v4.0.0
+
+Both are narrow. If you resolve `IRoutya` from the container, which is the normal case, **no source
+change is required**.
+
+**1. `IRoutya` gained `CreateStream`**
+
+Only affects code that *implements* the interface, typically a hand written test double. Add the
+member, or switch to a mocking framework, which generates it for you.
+
+```csharp
+IAsyncEnumerable<TResponse> CreateStream<TRequest, TResponse>(
+    TRequest request,
+    CancellationToken cancellationToken = default)
+        where TRequest : IStreamRequest<TResponse>;
+```
+
+**2. `DefaultRoutya`'s constructor gained a parameter**
+
+Only affects code calling `new DefaultRoutya(...)` directly. `AddRoutya` registers the new
+`IRoutyaStreamDispatcher` for you.
+
+**Behaviour changes worth knowing about**, all fixes rather than redesigns:
+
+- `Scoped` pipeline behaviours are now built once per dispatch rather than once per process. They
+  were previously reused after their scope had been disposed. Costs about 272 B per dispatch for two
+  behaviours; register them `Singleton` where they are stateless
+- `PublishParallelAsync` now gives each handler its own scope, so parallel handlers can no longer
+  share scoped state with one another. Sequential publishing still shares one
+- `internal` handlers previously skipped by the source generator are now discovered and registered.
+  If you registered one manually as a workaround, remove that registration
+
+Full detail, including upgrade notes, is in the [changelog](./CHANGELOG.md).
 
 ### ⚠️ Breaking Changes in v2.0.0
 
@@ -119,10 +162,10 @@ public async Task<TResponse> Handle(
 ```
 
 **2. Performance Improvements**
-- Registry-based optimization with smart fallback
-- Auto-caching of discovered handlers for improved performance
-- 9-10% faster request dispatching with Singleton/Transient handlers
-- 30% faster notification dispatching with Singleton sequential handlers
+- Registry-based dispatch for handlers registered through the `AddRoutya*Handler` methods or assembly scanning
+
+---
+
 ## 🚀 Quick Start
 
 # Dependency injection
@@ -193,39 +236,39 @@ builder.Services.AddRoutyaNotificationHandler<UserRegisteredNotification, LogAud
 
 **Why use these methods?**
 - ✅ **Automatic registry population** - Handlers added to high-performance registry
-- ✅ **30% faster** for notifications (110ns vs 158ns with Singleton)
+- ✅ **Lower allocation** for notifications (160 B vs 440 B with Singleton)
 - ✅ **Type-safe** - Compile-time verification of handler signatures
 - ✅ **Flexible lifetimes** - Choose Singleton/Scoped/Transient per handler
 
 ### Option 3: Traditional DI Registration (Still Supported)
-You can also use standard DI registration - works with auto-caching fallback:
+You can also use standard DI registration - these handlers are resolved through the container on each dispatch:
 
 ```C#
 // Register Routya core services (no assembly scanning)
 builder.Services.AddRoutya();
 
-// Traditional DI registration (automatically cached to registry on first use)
+// Traditional DI registration
 builder.Services.AddSingleton<IAsyncRequestHandler<CreateProductRequest, Product>, CreateProductHandler>();
 builder.Services.AddScoped<IAsyncRequestHandler<GetProductRequest, Product?>, GetProductHandler>();
 builder.Services.AddTransient<IAsyncRequestHandler<GetAllProductsRequest, List<Product>>, GetAllProductsHandler>();
 
-// Notification handlers (automatically cached on first publish)
+// Notification handlers
 builder.Services.AddSingleton<INotificationHandler<UserRegisteredNotification>, SendEmailHandler>();
 ```
 
-**Trade-off**: First call uses standard DI resolution (~5-10% slower), subsequent calls automatically use optimized registry.
+**Trade-off**: handlers registered this way are resolved through the container on every dispatch, so they do not get the registry's direct resolution. Use the `AddRoutya*Handler` methods above, or assembly scanning, if you want that.
 
-**Performance Comparison:**
-- **Singleton**: ~380 ns (2% slower than MediatR, 50% less memory, best for stateless handlers)
-- **Transient**: ~384 ns (3% slower than MediatR, matches memory, maximum isolation)  
-- **Scoped**: ~440 ns (18% overhead, safe for DbContext and scoped dependencies)
+**Performance Comparison** (memory figures are deterministic; timings are indicative):
+- **Singleton**: 808 B per dispatch, 20% less than MediatR, best for stateless handlers
+- **Transient**: 832 B per dispatch, 18% less than MediatR, maximum isolation
+- **Scoped**: 1016 B per dispatch, matching MediatR, safe for DbContext and scoped dependencies
 
 Routya lets YOU choose the right lifetime per handler:
 - 🚀 **Singleton** for stateless handlers = fastest, least memory
 - 🔄 **Scoped** for handlers with DbContext = safe with proper scope management  
 - 🔒 **Transient** when you need maximum isolation = new instance every time
 
-### Backward Compatibility & Auto-Registry
+### Backward Compatibility
 Routya maintains full backward compatibility with traditional DI registration:
 
 ```C#
@@ -234,45 +277,52 @@ builder.Services.AddScoped<IAsyncRequestHandler<MyRequest, MyResponse>, MyHandle
 builder.Services.AddScoped<INotificationHandler<MyNotification>, MyNotificationHandler>();
 ```
 
-**Smart Fallback with Auto-Caching:**
-When handlers aren't found in the registry, Routya automatically:
-1. Falls back to `GetService/GetServices` resolution (first call)
-2. **Adds discovered handlers to the registry** (automatic optimization!)
-3. Uses fast registry-based dispatch for all subsequent calls
+**How these are dispatched:**
+Handlers registered this way are not described in Routya's registry, so Routya resolves them through
+their interface on every dispatch, from the current dispatch scope. That is the same work any
+container does, and it is required for correctness: registering `IAsyncRequestHandler<,>` against an
+implementation does not register the implementation type, and a `Scoped` handler must be built once
+per scope rather than reused.
 
 This ensures:
-- ✅ **First call**: Fallback resolution (~same speed as traditional)
-- ✅ **Second+ calls**: Registry-optimized dispatch (~28% faster for notifications!)
 - ✅ Smooth migration path from older versions
 - ✅ Works with existing code without changes
-- ✅ Automatic performance improvement after first use
+- ✅ Correct behaviour for `Scoped` handlers and handlers holding scoped dependencies
+
+**If you want the registry's faster path**, register through `AddRoutyaRequestHandler`,
+`AddRoutyaAsyncRequestHandler`, `AddRoutyaNotificationHandler`, or assembly scanning. Those record
+the concrete type and lifetime up front, which lets Routya resolve the handler directly.
 
 # Requests
 
-### 📊 Benchmark Results (.NET 8 - November 2025)
-Benchmarks comparing Routya against MediatR 13.1.0 with simple request handlers (BenchmarkDotNet v0.14.0)
+### 📊 Allocation per dispatch
 
-**Test Environment:**
-- CPU: 11th Gen Intel Core i7-11800H @ 2.30GHz (8 cores, 16 logical processors)
-- RAM: System with AVX-512F support
-- OS: Windows 11 (10.0.22623)
-- .NET: 8.0.17 (8.0.1725.26602), X64 RyuJIT
-- GC: Concurrent Server
+Compared against MediatR 12.5.0 with simple request handlers.
 
-#### Request Dispatching Performance
-| Method                     | Mean     | Ratio | Gen0   | Allocated | Notes |
-|--------------------------- |---------:|------:|-------:|----------:|-------|
-| MediatR_SendAsync          | 369.3 ns |  1.00 | 0.0038 |    1016 B | Baseline |
-| **Routya_Singleton_Send**      | **333.9 ns** |  **0.90** | 0.0038 |    1008 B | ⚡ **10% faster!** |
-| **Routya_Transient_Send**      | **336.0 ns** |  **0.91** | 0.0038 |    1032 B | ⚡ **9% faster!** |
-| Routya_Singleton_SendAsync | 397.7 ns |  1.08 | 0.0048 |    1168 B | 8% overhead for async |
-| Routya_Scoped_Send         | 395.5 ns |  1.07 | 0.0048 |    1216 B | Scoped DI overhead |
-| Routya_Transient_SendAsync | 418.0 ns |  1.13 | 0.0048 |    1192 B | 13% overhead for async |
-| Routya_Scoped_SendAsync    | 476.4 ns |  1.29 | 0.0048 |    1376 B | Scoped + async overhead |
+| Configuration | Allocated | vs MediatR |
+|---|---:|---:|
+| MediatR `SendAsync` | 1016 B | baseline |
+| **Routya `Send`, Singleton handler** | **808 B** | **20% less** |
+| **Routya `Send`, Transient handler** | **832 B** | **18% less** |
+| Routya `SendAsync`, Singleton handler | 928 B | 9% less |
+| Routya `SendAsync`, Transient handler | 952 B | 6% less |
+| Routya `Send`, Scoped handler | 1016 B | same |
+| Routya `SendAsync`, Scoped handler | 1136 B | 12% more |
+
+> **Why allocations and not timings.** Allocated bytes are deterministic: they do not depend on CPU,
+> machine load or GC mode, so these figures hold on your hardware as well as ours, and they are
+> asserted on every build by the allocation budget tests. Timings are not published here because
+> they are not reproducible. On our own measurements the MediatR baseline, running unchanged code,
+> drifted by a third between runs. If you need timings for your hardware, run
+> [Routya.Benchmark](./Routya.Benchmark) on a quiet machine.
+>
+> Pipeline behaviors registered as `Scoped` are constructed once per dispatch scope, which costs a
+> further 272 B per dispatch over `Singleton` behaviors. Register behaviors as `Singleton` where
+> they are stateless.
 
 **Key Highlights:**
-- ✅ **Singleton/Transient Send handlers are 9-10% faster than MediatR!** 🚀
-- ✅ **Registry-based dispatch** with auto-caching fallback
+- ✅ **20% less memory than MediatR** with a Singleton handler
+- ✅ **Registry-based dispatch** for handlers registered through `AddRoutya*Handler` or assembly scanning
 - ✅ **Zero memory leaks** with proper scope disposal
 - ✅ **Fast-path optimization** when no behaviors configured
 - 🎯 **Configurable handler lifetimes** (Singleton/Scoped/Transient)
@@ -355,24 +405,31 @@ In the following example the LoggingBehavior will write to console before your r
 
 # Notifications
 
-### 📊 Notification Dispatching Performance
-Benchmarks comparing Routya against MediatR 13.1.0 for notification patterns (BenchmarkDotNet v0.14.0)
+### 📊 Allocation per publish
 
-| Method                      | Mean     | Ratio | Gen0   | Allocated | Notes |
-|---------------------------- |---------:|------:|-------:|----------:|-------|
-| MediatR_Publish             | 157.6 ns |  1.00 | 0.0017 |     440 B | Baseline |
-| **Routya_Singleton_Sequential** | **110.5 ns** |  **0.70** | 0.0007 |     192 B | ⚡ **30% faster, 56% less memory!** 🚀 |
-| **Routya_Singleton_Parallel**   | **143.6 ns** |  **0.91** | 0.0012 |     312 B | ⚡ **9% faster, 29% less memory** |
-| **Routya_Transient_Sequential** | **146.0 ns** |  **0.93** | 0.0010 |     240 B | ⚡ **7% faster, 45% less memory** |
-| Routya_Transient_Parallel   | 170.6 ns |  1.08 | 0.0014 |     360 B | 8% slower (parallel overhead) |
-| Routya_Scoped_Sequential    | 238.1 ns |  1.51 | 0.0014 |     424 B | Scoped DI overhead |
-| Routya_Scoped_Parallel      | 265.8 ns |  1.69 | 0.0019 |     544 B | Scoped + parallel overhead |
+Compared against MediatR 12.5.0, two handlers per notification.
+
+| Configuration | Allocated | vs MediatR |
+|---|---:|---:|
+| MediatR `Publish` | 440 B | baseline |
+| **Routya sequential, Singleton handlers** | **160 B** | **64% less** |
+| **Routya sequential, Transient handlers** | **208 B** | **53% less** |
+| Routya parallel, Singleton handlers | 280 B | 36% less |
+| Routya parallel, Transient handlers | 328 B | 25% less |
+| Routya sequential, Scoped handlers | 392 B | 11% less |
+| Routya parallel, Scoped handlers | 824 B | 87% more |
+
+> Parallel publishing with `Scoped` handlers gives every handler its own dispatch scope, which is
+> what makes it safe to use a `DbContext` in concurrent handlers. That is where the extra allocation
+> goes. Sequential publishing shares one scope and stays at 392 B.
+>
+> As above, allocations rather than timings, because allocations are deterministic and asserted on
+> every build.
 
 **Key Highlights:**
-- ✅ **Singleton sequential: 30% faster than MediatR with 56% less memory** (192B vs 440B) 🚀
-- ✅ **Transient sequential: 7% faster with 45% less memory** (240B vs 440B)
-- ✅ **Registry-based dispatch with auto-caching** - Zero GetServices calls after first use
-- ✅ **Parallel dispatching** available with minimal overhead
+- ✅ **64% less memory than MediatR** with Singleton handlers, 160 B against 440 B
+- ✅ **Registry-based dispatch** - no `GetServices` call for handlers described in the registry
+- ✅ **Parallel dispatching** with a scope per handler, safe for `DbContext`
 - ✅ **Flexible lifetime management** for different use cases
 
 Define your notification
@@ -429,6 +486,163 @@ or in parallel
      await dispatcher.PublishParallelAsync(new UserRegisteredNotification("john.doe@example.com"));
 ```
 
+### ⚠️ Scope behaviour differs between the two
+
+Under `RoutyaDispatchScope.Scoped`, the two publish methods handle scopes differently, and the
+difference matters if your handlers use `DbContext` or anything else registered as `Scoped`.
+
+| | Scope | Consequence |
+|---|---|---|
+| `PublishAsync` (sequential) | **One shared scope** for all handlers | Handlers can share scoped state. A later handler can commit work an earlier one staged through a shared unit of work |
+| `PublishParallelAsync` | **One scope per handler** | Handlers cannot share scoped state with each other. Each gets its own `DbContext`, so concurrent handlers cannot collide |
+
+This is deliberate. Handlers running in parallel would otherwise be handed the same scoped instance
+simultaneously, and `DbContext` throws `InvalidOperationException: A second operation was started on
+this context before a previous operation completed` when that happens. The extra scopes cost roughly
+300 bytes per additional handler.
+
+If your parallel handlers need to share scoped state, they are not independent, and
+`PublishAsync` is the correct choice.
+
+---
+
+## 🌊 Streaming
+
+Use `IStreamRequest<TResponse>` when a handler produces a sequence rather than a single response.
+Items are produced lazily and nothing is buffered, so a consumer can start processing before the
+handler has finished.
+
+```C#
+public record ExportProducts(int CategoryId) : IStreamRequest<Product>;
+
+public class ExportProductsHandler(AppDbContext db) : IStreamRequestHandler<ExportProducts, Product>
+{
+    public async IAsyncEnumerable<Product> Handle(
+        ExportProducts request,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var product in db.Products
+            .Where(p => p.CategoryId == request.CategoryId)
+            .AsAsyncEnumerable()
+            .WithCancellation(ct))
+        {
+            yield return product;
+        }
+    }
+}
+```
+
+Register it and dispatch:
+
+```C#
+services.AddRoutyaStreamRequestHandler<ExportProducts, Product, ExportProductsHandler>(ServiceLifetime.Scoped);
+
+// Runtime dispatch
+await foreach (var product in routya.CreateStream<ExportProducts, Product>(new ExportProducts(7), ct))
+{
+    // ...
+}
+
+// Source generated — no generic arguments needed
+await foreach (var product in routya.CreateStream(new ExportProducts(7), ct))
+{
+    // ...
+}
+```
+
+ASP.NET Core streams `IAsyncEnumerable<T>` natively, so a minimal API endpoint can return the
+result directly with nothing buffered:
+
+```C#
+app.MapGet("/products/stream", (IGeneratedRoutya routya, CancellationToken ct)
+    => routya.CreateStream(new ExportProducts(7), ct));
+```
+
+### Why not `IRequest<IAsyncEnumerable<T>>`?
+
+That shape works, but it is not streaming in any useful sense. The handler returns a *task* that
+hands back a sequence, so the pipeline finishes the moment the sequence is handed over, **before a
+single item has been produced**. A behaviour wrapped around it cannot observe items, cannot catch an
+exception thrown part way through, and times only the handover.
+
+`IStreamPipelineBehavior<TRequest, TResponse>` wraps the enumeration itself:
+
+```C#
+public class CountingBehavior<TRequest, TResponse> : IStreamPipelineBehavior<TRequest, TResponse>
+{
+    public async IAsyncEnumerable<TResponse> Handle(
+        TRequest request,
+        StreamHandlerDelegate<TResponse> next,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var count = 0;
+
+        await foreach (var item in next(ct).WithCancellation(ct))
+        {
+            count++;
+            yield return item;
+        }
+
+        Console.WriteLine($"streamed {count} items");
+    }
+}
+```
+
+### Scope lifetime
+
+Under `RoutyaDispatchScope.Scoped`, the dispatch scope lives for the **whole enumeration** and is
+disposed when it completes or the consumer abandons it. A handler may therefore hold a `DbContext`
+across the stream. Each call to `CreateStream` gets its own scope.
+
+---
+
+## 🔬 Trimming and Native AOT
+
+`Routya.Core` builds with the .NET trimming and AOT analyzers enabled and produces **no IL warnings**.
+It contains no expression tree construction or compilation, and no reflection on the dispatch path.
+
+A Native AOT console application using the source generator has been verified to compile and run,
+covering async and synchronous handlers, pipeline behaviours and notification fan out.
+
+### What is supported
+
+| | Trimming / Native AOT |
+|---|---|
+| `Routya.SourceGenerators` with `AddGeneratedRoutya()` | ✅ Supported and verified |
+| `AddRoutyaRequestHandler` / `AddRoutyaAsyncRequestHandler` / `AddRoutyaNotificationHandler` | ✅ Supported |
+| `AddRoutya(cfg, assembly)` assembly scanning | ❌ Not supported. Marked `[RequiresUnreferencedCode]`, so you get a build warning rather than a runtime surprise |
+
+### ⚠️ Register pipeline behaviours closed under Native AOT
+
+Microsoft's DI container **cannot construct an open generic service under Native AOT when a type
+argument is a value type**. This is a limitation of `Microsoft.Extensions.DependencyInjection`, not
+of Routya, but it affects any request whose response is `int`, `decimal`, `bool`, a `Guid`, an enum
+or any other struct:
+
+```C#
+// ❌ Throws under Native AOT for IRequest<decimal>, IRequest<int>, etc.
+services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+
+// ✅ Register each behaviour closed instead
+services.AddTransient<IPipelineBehavior<CalculateTotal, decimal>, LoggingBehavior<CalculateTotal, decimal>>();
+```
+
+Adding a closed registration *alongside* the open generic one does **not** help, because
+`GetServices` enumerates every registration for the service type and still tries to construct the
+open generic. The open generic registration has to be absent entirely.
+
+Reference type responses are unaffected.
+
+### Native AOT trades throughput for startup and size
+
+Native AOT is not a performance optimisation for dispatch. Measured on the same machine, source
+generated dispatch under Native AOT runs roughly **three to four times slower** than under the JIT,
+because AOT gives up tiered compilation and dynamic profile guided optimisation, and Routya's
+dispatch path is dense with interface calls that benefit from them.
+
+What AOT buys is startup time, a self contained binary of a few megabytes, and no runtime
+dependency. Choose it for those reasons, not for throughput.
+
 ---
 
 ## 🌐 Web API Demos
@@ -459,10 +673,13 @@ dotnet run
 
 ### Runtime dispatch demo — [`Routya.WebApi.Demo`](./Routya.WebApi.Demo)
 
-Demonstrates `IRoutya` (runtime reflection-based dispatch) with Entity Framework Core:
+Demonstrates `IRoutya` (runtime dispatch) with Entity Framework Core:
 - ✅ **All three handler lifetimes** (Singleton, Scoped, Transient)
 - ✅ **Entity Framework Core** with SQL Server
 - ✅ **Full CRUD operations** via RESTful API
+- ✅ **`IStreamRequest<T>` streaming** — `GET /api/products/stream` reads rows straight from the
+  database with `AsAsyncEnumerable()` and writes each product to the response as it arrives, so
+  nothing is buffered. The `Scoped` handler keeps its `DbContext` for the whole enumeration
 
 ```powershell
 cd Routya.WebApi.Demo

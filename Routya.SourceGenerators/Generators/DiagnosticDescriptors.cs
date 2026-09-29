@@ -33,6 +33,15 @@ namespace Routya.SourceGenerators.Generators
             isEnabledByDefault: true,
             description: "Informational message about discovered handlers.");
 
+        public static readonly DiagnosticDescriptor TypedDispatchNotGenerated = new DiagnosticDescriptor(
+            id: "ROUTYA005",
+            title: "No typed dispatch member generated for handler",
+            messageFormat: "Handler '{0}' is registered, but no typed member was generated on IGeneratedRoutya because '{1}' is not publicly accessible. Dispatch it through IRoutya, or make the type public.",
+            category: Category,
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "IGeneratedRoutya and GeneratedRoutya are public, so they cannot expose a request, response or notification type that is not externally visible. The handler is still registered by AddGeneratedRoutya and remains reachable through runtime dispatch.");
+
         public static readonly DiagnosticDescriptor GenerationComplete = new DiagnosticDescriptor(
             id: "ROUTYA004",
             title: "Code generation complete",

@@ -110,6 +110,124 @@ public class SourceGeneratorIntegrationTests
         Assert.Equal(1, tracker.Calls.Count(c => c == nameof(AuditHandler)));
     }
 
+    // ── Synchronous dispatch ─────────────────────────────────────────────────
+
+    [Fact]
+    public void AddGeneratedRoutya_Registers_Sync_Request_Handler()
+    {
+        var provider = BuildProvider();
+        var handler = provider.GetService<IRequestHandler<CalculateTotalRequest, decimal>>();
+        Assert.NotNull(handler);
+        Assert.IsType<CalculateTotalHandler>(handler);
+    }
+
+    [Fact]
+    public void Send_Dispatches_To_Sync_Handler_And_Returns_Correct_Response()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+
+        var result = routya.Send(new CalculateTotalRequest(3, 9.99m));
+
+        Assert.Equal(29.97m, result);
+    }
+
+    [Fact]
+    public void Send_Runs_Pipeline_Behaviors_Around_A_Sync_Handler()
+    {
+        var tracker = new HandlerCallTracker();
+        var services = new ServiceCollection();
+        services.AddSingleton(tracker);
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TrackingBehavior<,>));
+        services.AddGeneratedRoutya();
+        var routya = services.BuildServiceProvider().GetRequiredService<IGeneratedRoutya>();
+
+        var result = routya.Send(new CalculateTotalRequest(2, 5m));
+
+        Assert.Equal(10m, result);
+        Assert.NotEmpty(tracker.Calls);
+    }
+
+    // ── Streaming ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddGeneratedRoutya_Registers_Stream_Handler()
+    {
+        var provider = BuildProvider();
+        var handler = provider.GetService<IStreamRequestHandler<CountProductsQuery, int>>();
+        Assert.NotNull(handler);
+        Assert.IsType<CountProductsHandler>(handler);
+    }
+
+    [Fact]
+    public async Task CreateStream_Yields_All_Items_In_Order()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+
+        var items = new List<int>();
+        await foreach (var item in routya.CreateStream(new CountProductsQuery(4)))
+        {
+            items.Add(item);
+        }
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, items);
+    }
+
+    [Fact]
+    public async Task CreateStream_Is_Lazy_And_Does_Not_Buffer()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+        CountProductsHandler.ItemsProduced = 0;
+
+        var stream = routya.CreateStream(new CountProductsQuery(5));
+        Assert.Equal(0, CountProductsHandler.ItemsProduced);
+
+        var seen = 0;
+        await foreach (var _ in stream)
+        {
+            seen++;
+
+            // The handler must not have run ahead of the consumer
+            Assert.Equal(seen, CountProductsHandler.ItemsProduced);
+        }
+
+        Assert.Equal(5, seen);
+    }
+
+    // ── Fan out when a handler faults ────────────────────────────────────────
+
+    [Fact]
+    public async Task PublishAsync_Waits_For_Every_Handler_Even_When_One_Faults()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+        FanOutSlowHandler.Completed = false;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => routya.PublishAsync(new FanOutFailureNotification()));
+
+        Assert.True(
+            FanOutSlowHandler.Completed,
+            "A faulting handler must not let the publish return while another handler is still running.");
+    }
+
+    // ── Internal handlers ────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddGeneratedRoutya_Registers_An_Internal_Handler()
+    {
+        var provider = BuildProvider();
+        var handler = provider.GetService<IAsyncRequestHandler<ArchiveOrderCommand, bool>>();
+        Assert.NotNull(handler);
+    }
+
+    [Fact]
+    public async Task SendAsync_Dispatches_To_An_Internal_Handler()
+    {
+        var routya = BuildProvider().GetRequiredService<IGeneratedRoutya>();
+
+        Assert.True(await routya.SendAsync(new ArchiveOrderCommand(1)));
+        Assert.False(await routya.SendAsync(new ArchiveOrderCommand(0)));
+    }
+
     // ── Pipeline behavior ────────────────────────────────────────────────────
 
     [Fact]

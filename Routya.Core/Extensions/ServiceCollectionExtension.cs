@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
@@ -54,18 +55,17 @@ namespace Routya.Core.Extensions
     public static class ServiceCollectionExtension
     {
         /// <summary>
-        /// Registers Routya core services and optionally scans assemblies for request and notification handlers.
+        /// Registers Routya core services. Handlers are registered separately, which keeps this
+        /// overload free of reflection and therefore usable under trimming and Native AOT.
         /// </summary>
         /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
         /// <param name="configure">Optional configuration action to customize <see cref="RoutyaDispatcherOptions"/>.</param>
-        /// <param name="scanAssemblies">Optional assemblies to scan for <see cref="IRequestHandler{TRequest, TResponse}"/>, 
-        /// <see cref="IAsyncRequestHandler{TRequest, TResponse}"/>, and <see cref="INotificationHandler{TNotification}"/> implementations.</param>
         /// <returns>The <see cref="IServiceCollection"/> for method chaining.</returns>
         /// <remarks>
         /// <para>This method registers the core Routya dispatcher services and builds an optimized handler registry for fast dispatch.</para>
         /// <para>
-        /// When <paramref name="scanAssemblies"/> are provided, all handler implementations are automatically registered with the specified 
-        /// <see cref="RoutyaDispatcherOptions.HandlerLifetime"/> (defaults to Scoped).
+        /// To discover handlers by scanning assemblies instead, use the overload that takes
+        /// assemblies. That overload uses reflection and is not compatible with trimming or Native AOT.
         /// </para>
         /// <para>
         /// <b>Performance Tip:</b> For optimal performance, use the specialized registration methods instead of assembly scanning:
@@ -105,62 +105,190 @@ namespace Routya.Core.Extensions
         /// </para>
         /// </remarks>
         public static IServiceCollection AddRoutya(
-            this IServiceCollection services, 
-            Action<RoutyaDispatcherOptions>? configure = null!,
+            this IServiceCollection services,
+            Action<RoutyaDispatcherOptions>? configure = null!)
+        {
+            var options = new RoutyaDispatcherOptions();
+            configure?.Invoke(options);
+
+            return RegisterCoreServices(services, options);
+        }
+
+        /// <summary>
+        /// Registers Routya core services and scans the supplied assemblies for handlers.
+        /// </summary>
+        /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
+        /// <param name="configure">Optional configuration action to customize <see cref="RoutyaDispatcherOptions"/>.</param>
+        /// <param name="scanAssemblies">Assemblies to scan for <see cref="IRequestHandler{TRequest, TResponse}"/>,
+        /// <see cref="IAsyncRequestHandler{TRequest, TResponse}"/> and <see cref="INotificationHandler{TNotification}"/> implementations.</param>
+        /// <returns>The <see cref="IServiceCollection"/> for method chaining.</returns>
+        /// <remarks>
+        /// <para>
+        /// Assembly scanning finds handlers by reflection, so the types it needs cannot be determined
+        /// at build time. Under trimming or Native AOT the trimmer may remove a handler that is only
+        /// ever referenced here, and dispatch then fails at runtime with nothing having warned at
+        /// build time. Register handlers with the <c>AddRoutya*Handler</c> methods, or use
+        /// <c>Routya.SourceGenerators</c>, in a trimmed or AOT application.
+        /// </para>
+        /// </remarks>
+        [RequiresUnreferencedCode(
+            "Assembly scanning finds handler types by reflection, which trimming cannot analyse statically. "
+            + "Register handlers with AddRoutyaRequestHandler, AddRoutyaAsyncRequestHandler or "
+            + "AddRoutyaNotificationHandler, or use Routya.SourceGenerators, in a trimmed or AOT application.")]
+        public static IServiceCollection AddRoutya(
+            this IServiceCollection services,
+            Action<RoutyaDispatcherOptions>? configure,
             params Assembly[] scanAssemblies)
         {
             var options = new RoutyaDispatcherOptions();
             configure?.Invoke(options);
 
-            // Get or create notification handler registry
-            var existingNotificationRegistry = services
-                .Where(sd => sd.ServiceType == typeof(Dictionary<Type, List<NotificationHandlerInfo>>))
-                .Select(sd => sd.ImplementationInstance as Dictionary<Type, List<NotificationHandlerInfo>>)
-                .FirstOrDefault();
-
-            var notificationHandlerRegistry = existingNotificationRegistry ?? new Dictionary<Type, List<NotificationHandlerInfo>>();
-
-            // Get or create request handler registry
-            var existingRequestRegistry = services
-                .Where(sd => sd.ServiceType == typeof(Dictionary<Type, RequestHandlerInfo>))
-                .Select(sd => sd.ImplementationInstance as Dictionary<Type, RequestHandlerInfo>)
-                .FirstOrDefault();
-
-            var requestHandlerRegistry = existingRequestRegistry ?? new Dictionary<Type, RequestHandlerInfo>();
-
             if (scanAssemblies?.Length > 0)
             {
+                var notificationHandlerRegistry = GetOrAddNotificationRegistry(services);
+                var requestHandlerRegistry = GetOrAddRequestRegistry(services);
+
                 foreach (var assembly in scanAssemblies)
                 {
-                    RegisterRoutyaHandlersFromAssembly(services, assembly, options.HandlerLifetime, notificationHandlerRegistry, requestHandlerRegistry);
+                    RegisterRoutyaHandlersFromAssembly(
+                        services,
+                        assembly,
+                        options.HandlerLifetime,
+                        notificationHandlerRegistry,
+                        requestHandlerRegistry);
                 }
             }
 
-            // Register the notification handler registry as a singleton (if not already registered)
-            if (existingNotificationRegistry == null)
-            {
-                services.AddSingleton(notificationHandlerRegistry);
-            }
+            return RegisterCoreServices(services, options);
+        }
 
-            // Register the request handler registry as a singleton (if not already registered)
-            if (existingRequestRegistry == null)
-            {
-                services.AddSingleton(requestHandlerRegistry);
-            }
+        /// <summary>
+        /// Registers the handler registries and the dispatcher services. Shared by both
+        /// <c>AddRoutya</c> overloads so that the scanning one can carry its own trimming annotation
+        /// without forcing that annotation onto callers who never scan.
+        /// </summary>
+        private static IServiceCollection RegisterCoreServices(
+            IServiceCollection services,
+            RoutyaDispatcherOptions options)
+        {
+            GetOrAddNotificationRegistry(services);
+            GetOrAddRequestRegistry(services);
 
             services.AddSingleton<IRoutyaRequestDispatcher>(sp => new CompiledRequestInvokerDispatcher(
-                sp, 
-                sp.GetRequiredService<Dictionary<Type, RequestHandlerInfo>>(), 
+                sp,
+                sp.GetRequiredService<Dictionary<Type, RequestHandlerInfo>>(),
                 options));
 
             services.AddSingleton<IRoutyaNotificationDispatcher>(sp => new CompiledNotificationDispatcher(
-                sp, 
-                sp.GetRequiredService<Dictionary<Type, List<NotificationHandlerInfo>>>(), 
+                sp,
+                sp.GetRequiredService<Dictionary<Type, List<NotificationHandlerInfo>>>(),
+                options));
+
+            services.AddSingleton<IRoutyaStreamDispatcher>(sp => new CompiledStreamDispatcher(
+                sp,
+                sp.GetRequiredService<Dictionary<Type, RequestHandlerInfo>>(),
                 options));
 
             services.AddSingleton<IRoutya, DefaultRoutya>();
 
             return services;
+        }
+
+        /// <summary>
+        /// Registers a stream request handler with the specified lifetime, adding it to the registry
+        /// so dispatch can resolve it directly.
+        /// </summary>
+        /// <typeparam name="TRequest">The type of request, implementing <see cref="IStreamRequest{TResponse}"/>.</typeparam>
+        /// <typeparam name="TResponse">The type of each item produced.</typeparam>
+        /// <typeparam name="THandler">The concrete handler type implementing <see cref="IStreamRequestHandler{TRequest, TResponse}"/>.</typeparam>
+        /// <param name="services">The <see cref="IServiceCollection"/> to add the handler to.</param>
+        /// <param name="lifetime">The service lifetime for the handler. Defaults to <see cref="ServiceLifetime.Scoped"/>.</param>
+        /// <returns>The <see cref="IServiceCollection"/> for method chaining.</returns>
+        /// <remarks>
+        /// <para>
+        /// Under <c>RoutyaDispatchScope.Scoped</c> the dispatch scope lives for the whole
+        /// enumeration, so a <see cref="ServiceLifetime.Scoped"/> handler may hold a scoped
+        /// dependency such as a <c>DbContext</c> across the stream.
+        /// </para>
+        /// <para>
+        /// Example:
+        /// <code>
+        /// services.AddRoutyaStreamRequestHandler&lt;ExportProducts, Product, ExportProductsHandler&gt;(ServiceLifetime.Scoped);
+        /// </code>
+        /// </para>
+        /// </remarks>
+        public static IServiceCollection AddRoutyaStreamRequestHandler<TRequest, TResponse,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
+            this IServiceCollection services,
+            ServiceLifetime lifetime = ServiceLifetime.Scoped)
+            where TRequest : IStreamRequest<TResponse>
+            where THandler : class, IStreamRequestHandler<TRequest, TResponse>
+        {
+            var handlerInterface = typeof(IStreamRequestHandler<TRequest, TResponse>);
+            var handlerType = typeof(THandler);
+
+            var registry = GetOrAddRequestRegistry(services);
+
+            registry[handlerInterface] = new RequestHandlerInfo
+            {
+                ConcreteType = handlerType,
+                Lifetime = lifetime,
+                IsAsync = true
+            };
+
+            switch (lifetime)
+            {
+                case ServiceLifetime.Singleton:
+                    services.AddSingleton(handlerInterface, handlerType);
+                    services.AddSingleton(handlerType);
+                    break;
+                case ServiceLifetime.Scoped:
+                    services.AddScoped(handlerInterface, handlerType);
+                    services.AddScoped(handlerType);
+                    break;
+                case ServiceLifetime.Transient:
+                    services.AddTransient(handlerInterface, handlerType);
+                    services.AddTransient(handlerType);
+                    break;
+            }
+
+            return services;
+        }
+
+        private static Dictionary<Type, List<NotificationHandlerInfo>> GetOrAddNotificationRegistry(
+            IServiceCollection services)
+        {
+            var existing = services
+                .Where(sd => sd.ServiceType == typeof(Dictionary<Type, List<NotificationHandlerInfo>>))
+                .Select(sd => sd.ImplementationInstance as Dictionary<Type, List<NotificationHandlerInfo>>)
+                .FirstOrDefault();
+
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var created = new Dictionary<Type, List<NotificationHandlerInfo>>();
+            services.AddSingleton(created);
+            return created;
+        }
+
+        private static Dictionary<Type, RequestHandlerInfo> GetOrAddRequestRegistry(
+            IServiceCollection services)
+        {
+            var existing = services
+                .Where(sd => sd.ServiceType == typeof(Dictionary<Type, RequestHandlerInfo>))
+                .Select(sd => sd.ImplementationInstance as Dictionary<Type, RequestHandlerInfo>)
+                .FirstOrDefault();
+
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var created = new Dictionary<Type, RequestHandlerInfo>();
+            services.AddSingleton(created);
+            return created;
         }
 
         /// <summary>
@@ -178,9 +306,9 @@ namespace Routya.Core.Extensions
         /// <para>
         /// <b>Lifetime Recommendations:</b>
         /// <list type="bullet">
-        /// <item><description><b>Singleton:</b> Best performance (~334ns). Use for stateless handlers. Must be thread-safe.</description></item>
-        /// <item><description><b>Scoped:</b> Safe for handlers with DbContext or scoped dependencies (~395ns). Default and recommended.</description></item>
-        /// <item><description><b>Transient:</b> New instance every time (~336ns). Use when you need maximum isolation.</description></item>
+        /// <item><description><b>Singleton:</b> Best performance, about 104 bytes per dispatch with the Root scope. Use for stateless handlers. Must be thread-safe.</description></item>
+        /// <item><description><b>Scoped:</b> Safe for handlers with DbContext or scoped dependencies. Default and recommended.</description></item>
+        /// <item><description><b>Transient:</b> New instance every time. Use when you need maximum isolation.</description></item>
         /// </list>
         /// </para>
         /// <para>
@@ -194,7 +322,8 @@ namespace Routya.Core.Extensions
         /// </code>
         /// </para>
         /// </remarks>
-        public static IServiceCollection AddRoutyaRequestHandler<TRequest, TResponse, THandler>(
+        public static IServiceCollection AddRoutyaRequestHandler<TRequest, TResponse,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
             this IServiceCollection services,
             ServiceLifetime lifetime = ServiceLifetime.Scoped)
             where TRequest : IRequest<TResponse>
@@ -258,9 +387,9 @@ namespace Routya.Core.Extensions
         /// <para>
         /// <b>Performance Characteristics:</b>
         /// <list type="bullet">
-        /// <item><description><b>Singleton:</b> ~398ns per request. Fastest option for stateless async handlers.</description></item>
-        /// <item><description><b>Scoped:</b> ~476ns per request. Safe for handlers using DbContext or other scoped services.</description></item>
-        /// <item><description><b>Transient:</b> ~418ns per request. New instance for every dispatch, maximum isolation.</description></item>
+        /// <item><description><b>Singleton:</b> about 208 bytes per request with the Root scope. Fastest option for stateless async handlers.</description></item>
+        /// <item><description><b>Scoped:</b> about 544 bytes per request. Safe for handlers using DbContext or other scoped services.</description></item>
+        /// <item><description><b>Transient:</b> new instance for every dispatch, maximum isolation.</description></item>
         /// </list>
         /// </para>
         /// <para>
@@ -286,7 +415,8 @@ namespace Routya.Core.Extensions
         /// </code>
         /// </para>
         /// </remarks>
-        public static IServiceCollection AddRoutyaAsyncRequestHandler<TRequest, TResponse, THandler>(
+        public static IServiceCollection AddRoutyaAsyncRequestHandler<TRequest, TResponse,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
             this IServiceCollection services,
             ServiceLifetime lifetime = ServiceLifetime.Scoped)
             where TRequest : IRequest<TResponse>
@@ -350,10 +480,9 @@ namespace Routya.Core.Extensions
         /// <para>
         /// <b>Performance Characteristics:</b>
         /// <list type="bullet">
-        /// <item><description><b>Singleton Sequential:</b> ~111ns per publish (30% faster than MediatR, 56% less memory)</description></item>
-        /// <item><description><b>Singleton Parallel:</b> ~144ns per publish (9% faster than MediatR, 29% less memory)</description></item>
-        /// <item><description><b>Scoped Sequential:</b> ~238ns per publish (scoped DI overhead)</description></item>
-        /// <item><description><b>Scoped Parallel:</b> ~266ns per publish (scoped + parallel overhead)</description></item>
+        /// <item><description><b>Singleton Sequential:</b> about 32 bytes per publish with the Root scope</description></item>
+        /// <item><description><b>Scoped Sequential:</b> about 392 bytes per publish, all handlers sharing one scope</description></item>
+        /// <item><description><b>Scoped Parallel:</b> about 824 bytes per publish, each handler in its own scope</description></item>
         /// </list>
         /// </para>
         /// <para>
@@ -384,7 +513,8 @@ namespace Routya.Core.Extensions
         /// </code>
         /// </para>
         /// </remarks>
-        public static IServiceCollection AddRoutyaNotificationHandler<TNotification, THandler>(
+        public static IServiceCollection AddRoutyaNotificationHandler<TNotification,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler>(
             this IServiceCollection services,
             ServiceLifetime lifetime = ServiceLifetime.Scoped)
             where TNotification : INotification
@@ -437,6 +567,31 @@ namespace Routya.Core.Extensions
             return services;
         }
 
+        /// <summary>
+        /// Returns the types in an assembly that could be loaded.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Assembly.GetTypes"/> throws <see cref="ReflectionTypeLoadException"/> when any
+        /// type fails to load, which happens whenever a scanned assembly references something that
+        /// is not deployed, such as an optional provider package. Letting that escape turns a
+        /// partially loadable assembly into a startup failure, even when every Routya handler in it
+        /// loaded perfectly well. The exception carries the types that did load, so scanning
+        /// continues with those.
+        /// </remarks>
+        [RequiresUnreferencedCode("Enumerating the types in an assembly cannot be analysed statically by trimming.")]
+        private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                return ex.Types.Where(t => t != null)!;
+            }
+        }
+
+        [RequiresUnreferencedCode("Assembly scanning finds handler types by reflection, which trimming cannot analyse statically.")]
         private static void RegisterRoutyaHandlersFromAssembly(
             IServiceCollection services, 
             Assembly assembly, 
@@ -444,7 +599,7 @@ namespace Routya.Core.Extensions
             Dictionary<Type, List<NotificationHandlerInfo>> notificationHandlerRegistry,
             Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
         {
-            var allTypes = assembly.GetTypes().Where(t => !t.IsAbstract && !t.IsInterface);
+            var allTypes = GetLoadableTypes(assembly).Where(t => !t.IsAbstract && !t.IsInterface);
 
             foreach (var type in allTypes)
             {

@@ -1,4 +1,4 @@
-using Routya.SourceGenerators.Models;
+﻿using Routya.SourceGenerators.Models;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -66,9 +66,69 @@ internal static class DispatcherEmitter
 
     private static void EmitRequestDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
     {
-        var requestTypeName = GetFullTypeName(handler.RequestType);
-        var responseTypeName = GetFullTypeName(handler.ResponseType!);
-        
+        // IRequestHandler exposes Handle and IAsyncRequestHandler exposes HandleAsync, so the two
+        // cannot share a dispatch body. The generated interface likewise declares Send for a
+        // synchronous handler and SendAsync for an asynchronous one.
+        if (handler.IsStream)
+        {
+            EmitStreamDispatchMethod(sb, handler);
+        }
+        else if (handler.IsAsync)
+        {
+            EmitAsyncRequestDispatchMethod(sb, handler);
+        }
+        else
+        {
+            EmitSyncRequestDispatchMethod(sb, handler);
+        }
+    }
+
+    private static void EmitStreamDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
+    {
+        var requestTypeName = handler.RequestType.ToGeneratedName();
+        var responseTypeName = handler.ResponseType!.ToGeneratedName();
+        var behaviorType = $"IStreamPipelineBehavior<{requestTypeName}, {responseTypeName}>";
+
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine($"        /// Optimized streaming dispatch for {requestTypeName}.");
+        sb.AppendLine("        /// Items are produced lazily and nothing is buffered.");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine($"        public System.Collections.Generic.IAsyncEnumerable<{responseTypeName}> CreateStream(");
+        sb.AppendLine($"            {requestTypeName} request,");
+        sb.AppendLine($"            CancellationToken cancellationToken = default)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (request == null) throw new ArgumentNullException(nameof(request));");
+        sb.AppendLine();
+        sb.AppendLine($"            var resolvedBehaviors = _serviceProvider.GetServices<{behaviorType}>();");
+        sb.AppendLine($"            var behaviors = resolvedBehaviors as {behaviorType}[] ?? resolvedBehaviors.ToArray();");
+        sb.AppendLine($"            var handler = _serviceProvider.GetRequiredService<{handler.ConcreteType}>();");
+        sb.AppendLine();
+        sb.AppendLine("            if (behaviors.Length == 0)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                // No behaviors - straight to the handler");
+        sb.AppendLine("                return handler.Handle(request, cancellationToken);");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine($"            StreamHandlerDelegate<{responseTypeName}> next = (ct) => handler.Handle(request, ct);");
+        sb.AppendLine();
+        sb.AppendLine("            // Walked in reverse so behaviors execute in registration order");
+        sb.AppendLine("            for (int i = behaviors.Length - 1; i >= 0; i--)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                var currentBehavior = behaviors[i];");
+        sb.AppendLine("                var currentDelegate = next;");
+        sb.AppendLine("                next = (ct) => currentBehavior.Handle(request, currentDelegate, ct);");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        sb.AppendLine("            return next(cancellationToken);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static void EmitAsyncRequestDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
+    {
+        var requestTypeName = handler.RequestType.ToGeneratedName();
+        var responseTypeName = handler.ResponseType!.ToGeneratedName();
+
         sb.AppendLine("        /// <summary>");
         sb.AppendLine($"        /// Optimized dispatch for {requestTypeName}.");
         sb.AppendLine("        /// Zero dictionary lookups, direct handler resolution.");
@@ -79,31 +139,77 @@ internal static class DispatcherEmitter
         sb.AppendLine("        {");
         sb.AppendLine("            if (request == null) throw new ArgumentNullException(nameof(request));");
         sb.AppendLine();
-        
-        // Check for pipeline behaviors
-        sb.AppendLine($"            var behaviors = _serviceProvider.GetServices<IPipelineBehavior<{requestTypeName}, {responseTypeName}>>();");
-        sb.AppendLine($"            var handler = _serviceProvider.GetRequiredService<{handler.ConcreteType}>();");
+        EmitBehaviorAndHandlerResolution(sb, handler, requestTypeName, responseTypeName);
         sb.AppendLine();
-        sb.AppendLine("            if (behaviors.Any())");
+        sb.AppendLine("            if (behaviors.Length == 0)");
         sb.AppendLine("            {");
-        sb.AppendLine("                // Build pipeline with behaviors");
-        sb.AppendLine("                RequestHandlerDelegate<" + responseTypeName + "> handlerDelegate = (ct) => handler.HandleAsync(request, ct);");
-        sb.AppendLine("                ");
-        sb.AppendLine("                // Reverse to ensure correct execution order");
-        sb.AppendLine("                foreach (var behavior in behaviors.Reverse())");
-        sb.AppendLine("                {");
-        sb.AppendLine("                    var currentDelegate = handlerDelegate;");
-        sb.AppendLine("                    var currentBehavior = behavior;");
-        sb.AppendLine("                    handlerDelegate = (ct) => currentBehavior.Handle(request, currentDelegate, ct);");
-        sb.AppendLine("                }");
-        sb.AppendLine();
-        sb.AppendLine("                return await handlerDelegate(cancellationToken).ConfigureAwait(false);");
+        sb.AppendLine("                // No behaviors - direct handler execution");
+        sb.AppendLine("                return await handler.HandleAsync(request, cancellationToken).ConfigureAwait(false);");
         sb.AppendLine("            }");
         sb.AppendLine();
-        sb.AppendLine("            // No behaviors - direct handler execution");
-        sb.AppendLine("            return await handler.HandleAsync(request, cancellationToken).ConfigureAwait(false);");
+        EmitBehaviorChain(sb, responseTypeName, "handler.HandleAsync(request, ct)");
+        sb.AppendLine();
+        sb.AppendLine("            return await next(cancellationToken).ConfigureAwait(false);");
         sb.AppendLine("        }");
         sb.AppendLine();
+    }
+
+    private static void EmitSyncRequestDispatchMethod(StringBuilder sb, HandlerDescriptor handler)
+    {
+        var requestTypeName = handler.RequestType.ToGeneratedName();
+        var responseTypeName = handler.ResponseType!.ToGeneratedName();
+
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine($"        /// Optimized dispatch for {requestTypeName}.");
+        sb.AppendLine("        /// Zero dictionary lookups, direct handler resolution.");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine($"        public {responseTypeName} Send({requestTypeName} request)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (request == null) throw new ArgumentNullException(nameof(request));");
+        sb.AppendLine();
+        EmitBehaviorAndHandlerResolution(sb, handler, requestTypeName, responseTypeName);
+        sb.AppendLine();
+        sb.AppendLine("            if (behaviors.Length == 0)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                // No behaviors - direct handler execution");
+        sb.AppendLine("                return handler.Handle(request);");
+        sb.AppendLine("            }");
+        sb.AppendLine();
+        EmitBehaviorChain(sb, responseTypeName, "Task.FromResult(handler.Handle(request))");
+        sb.AppendLine();
+        sb.AppendLine("            // IPipelineBehavior is asynchronous, so a synchronous Send has to wait for the");
+        sb.AppendLine("            // chain to complete. This matches IRoutya.Send, which documents that behaviors");
+        sb.AppendLine("            // run asynchronously even for synchronous handlers.");
+        sb.AppendLine("            return next(CancellationToken.None).GetAwaiter().GetResult();");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static void EmitBehaviorAndHandlerResolution(
+        StringBuilder sb,
+        HandlerDescriptor handler,
+        string requestTypeName,
+        string responseTypeName)
+    {
+        var behaviorType = $"IPipelineBehavior<{requestTypeName}, {responseTypeName}>";
+
+        // Materialized once, because the collection is otherwise enumerated twice
+        sb.AppendLine($"            var resolvedBehaviors = _serviceProvider.GetServices<{behaviorType}>();");
+        sb.AppendLine($"            var behaviors = resolvedBehaviors as {behaviorType}[] ?? resolvedBehaviors.ToArray();");
+        sb.AppendLine($"            var handler = _serviceProvider.GetRequiredService<{handler.ConcreteType}>();");
+    }
+
+    private static void EmitBehaviorChain(StringBuilder sb, string responseTypeName, string innerCall)
+    {
+        sb.AppendLine($"            RequestHandlerDelegate<{responseTypeName}> next = (ct) => {innerCall};");
+        sb.AppendLine();
+        sb.AppendLine("            // Walked in reverse so behaviors execute in registration order");
+        sb.AppendLine("            for (int i = behaviors.Length - 1; i >= 0; i--)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                var currentBehavior = behaviors[i];");
+        sb.AppendLine("                var currentDelegate = next;");
+        sb.AppendLine("                next = (ct) => currentBehavior.Handle(request, currentDelegate, ct);");
+        sb.AppendLine("            }");
     }
 
     private static void EmitNotificationDispatchMethod(
@@ -136,17 +242,13 @@ internal static class DispatcherEmitter
         {
             sb.AppendLine($"            await handler0.Handle(notification, cancellationToken).ConfigureAwait(false);");
         }
-        else if (handlers.Count == 2)
-        {
-            // Special case for 2 handlers: parallel execution without Task.WhenAll allocation
-            sb.AppendLine("            var task0 = handler0.Handle(notification, cancellationToken);");
-            sb.AppendLine("            var task1 = handler1.Handle(notification, cancellationToken);");
-            sb.AppendLine("            await task0.ConfigureAwait(false);");
-            sb.AppendLine("            await task1.ConfigureAwait(false);");
-        }
         else
         {
-            // For 3+ handlers, use Task.WhenAll (small allocation acceptable for many handlers)
+            // Task.WhenAll for every count above one, including two. Starting both tasks and then
+            // awaiting them one after another looks equivalent, but it is not: if the first task
+            // faults, the await rethrows immediately and the second task is never awaited. Its
+            // exception then goes unobserved, and the caller resumes while it is still running.
+            // Task.WhenAll observes every task and waits for all of them before propagating.
             sb.AppendLine("            await Task.WhenAll(");
             for (int i = 0; i < handlers.Count; i++)
             {
@@ -164,42 +266,4 @@ internal static class DispatcherEmitter
     {
     }
 
-    private static string GetFullTypeName(Microsoft.CodeAnalysis.INamedTypeSymbol symbol)
-    {
-        var sb = new StringBuilder();
-        
-        // Get namespace prefix
-        if (symbol.ContainingNamespace?.IsGlobalNamespace == false)
-        {
-            sb.Append(symbol.ContainingNamespace);
-            sb.Append('.');
-        }
-        
-        // Get type name
-        sb.Append(symbol.Name);
-        
-        // Handle generic types
-        if (symbol.IsGenericType && symbol.TypeArguments.Length > 0)
-        {
-            sb.Append('<');
-            for (int i = 0; i < symbol.TypeArguments.Length; i++)
-            {
-                if (i > 0)
-                    sb.Append(", ");
-                    
-                if (symbol.TypeArguments[i] is Microsoft.CodeAnalysis.INamedTypeSymbol namedTypeArg)
-                {
-                    sb.Append(GetFullTypeName(namedTypeArg));
-                }
-                else
-                {
-                    // Handle other type arguments (type parameters, arrays, etc.)
-                    sb.Append(symbol.TypeArguments[i].ToDisplayString());
-                }
-            }
-            sb.Append('>');
-        }
-        
-        return sb.ToString();
-    }
 }

@@ -21,7 +21,7 @@
         /// - Handlers are registered as Scoped lifetime
         /// </para>
         /// <para>
-        /// Performance impact: ~440ns per request (18% overhead compared to Root)
+        /// Costs one DI scope per dispatch compared with Root.
         /// </para>
         /// <para>
         /// This is the safe choice for most applications, especially those using Entity Framework Core or other scoped dependencies.
@@ -38,7 +38,7 @@
         /// Use this when:
         /// - All handlers are registered as Singleton or Transient (never Scoped)
         /// - Handlers don't depend on scoped services like DbContext
-        /// - You need maximum performance (~334ns per request)
+        /// - You need maximum performance, since no scope is created per dispatch
         /// </para>
         /// <para>
         /// ⚠️ WARNING: Will throw an exception if any handler is registered as Scoped or depends on scoped services.

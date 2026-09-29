@@ -51,6 +51,28 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
+    /// Stream products above a minimum price (STREAM handler)
+    /// </summary>
+    /// <remarks>
+    /// Returns IAsyncEnumerable rather than a list, so ASP.NET Core writes each product to the
+    /// response as it is read from the database. Nothing is buffered, and memory stays flat however
+    /// many products match.
+    ///
+    /// Under RoutyaDispatchScope.Scoped the dispatch scope lives for the whole enumeration, so the
+    /// handler's DbContext is still usable on the last item as well as the first. The scope is
+    /// disposed when the response finishes, or when the client disconnects part way through.
+    /// </remarks>
+    [HttpGet("stream")]
+    public IAsyncEnumerable<Product> StreamProducts(
+        [FromQuery] decimal minimumPrice = 0,
+        CancellationToken cancellationToken = default)
+    {
+        return _routya.CreateStream<ExportProductsRequest, Product>(
+            new ExportProductsRequest { MinimumPrice = minimumPrice },
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Update product stock (SINGLETON handler)
     /// </summary>
     [HttpPut("{id}/stock")]

@@ -34,3 +34,10 @@ public class DeleteProductRequest : IRequest<bool>
 {
     public int Id { get; set; }
 }
+
+// STREAM REQUEST - produces a sequence rather than a single response.
+// Handled by a Scoped handler, which holds its DbContext for the whole enumeration.
+public class ExportProductsRequest : IStreamRequest<Product>
+{
+    public decimal MinimumPrice { get; set; }
+}

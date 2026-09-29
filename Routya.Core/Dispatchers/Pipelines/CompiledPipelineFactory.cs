@@ -6,29 +6,70 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Routya.Core.Dispatchers.Pipelines
 {
-    internal static class CompiledPipelineFactory
+    /// <remarks>
+    /// One instance per <see cref="Requests.CompiledRequestInvokerDispatcher"/>, and therefore one per
+    /// DI container. The caches below must never be static: a static cache keyed on request type is
+    /// shared by every container in the process, which leaks state between containers (for example
+    /// between two WebApplicationFactory hosts in the same test run).
+    /// </remarks>
+    internal sealed class CompiledPipelineFactory
     {
-        private static readonly ConcurrentDictionary<Type, Delegate> _asyncCache = new ConcurrentDictionary<Type, Delegate>();
-        private static readonly ConcurrentDictionary<Type, Delegate> _syncCache = new ConcurrentDictionary<Type, Delegate>();
-        
-        // Cache for pre-resolved behavior arrays (per request type)
-        private static readonly ConcurrentDictionary<Type, object> _behaviorCache = new ConcurrentDictionary<Type, object>();
+        private readonly Dictionary<Type, RequestHandlerInfo> _requestHandlerRegistry;
 
-        public static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> GetOrAdd<TRequest, TResponse>(
-            Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
+        private readonly ConcurrentDictionary<Type, Delegate> _asyncCache = new ConcurrentDictionary<Type, Delegate>();
+        private readonly ConcurrentDictionary<Type, Delegate> _syncCache = new ConcurrentDictionary<Type, Delegate>();
+
+        // Records whether any IPipelineBehavior is registered for a given request type. Service
+        // registrations are immutable once the container is built, so this is a container wide fact
+        // and safe to cache. The resolved behavior *instances* are deliberately never cached: a
+        // behavior may be Scoped, so it must be resolved from the current dispatch scope every time.
+        private readonly ConcurrentDictionary<Type, bool> _hasBehaviors = new ConcurrentDictionary<Type, bool>();
+
+        public CompiledPipelineFactory(Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
+        {
+            _requestHandlerRegistry = requestHandlerRegistry;
+        }
+
+        /// <summary>
+        /// Resolves the pipeline behaviors for a request from the supplied provider, which is the
+        /// dispatch scope when <see cref="Extensions.RoutyaDispatchScope.Scoped"/> is configured.
+        /// </summary>
+        private IPipelineBehavior<TRequest, TResponse>[] ResolveBehaviors<TRequest, TResponse>(IServiceProvider provider)
+        {
+            // Fast path: this request type is already known to have no behaviors registered, so
+            // there is nothing to resolve and we can skip the GetServices call entirely.
+            if (_hasBehaviors.TryGetValue(typeof(TRequest), out var hasBehaviors) && !hasBehaviors)
+            {
+                return EmptyBehaviors<TRequest, TResponse>.Instance;
+            }
+
+            var resolved = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
+            var behaviors = resolved as IPipelineBehavior<TRequest, TResponse>[] ?? resolved.ToArray();
+
+            _hasBehaviors[typeof(TRequest)] = behaviors.Length > 0;
+
+            return behaviors;
+        }
+
+        private static class EmptyBehaviors<TRequest, TResponse>
+        {
+            public static readonly IPipelineBehavior<TRequest, TResponse>[] Instance =
+                new IPipelineBehavior<TRequest, TResponse>[0];
+        }
+
+        public Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> GetOrAdd<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
             return (Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>>)_asyncCache.GetOrAdd(typeof(TRequest), _ =>
-                BuildPrecompiledAsyncPipeline<TRequest, TResponse>(requestHandlerRegistry));
+                BuildPrecompiledAsyncPipeline<TRequest, TResponse>(_requestHandlerRegistry));
         }
 
-        private static Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> BuildPrecompiledAsyncPipeline<TRequest, TResponse>(
+        private Func<IServiceProvider, TRequest, CancellationToken, Task<TResponse>> BuildPrecompiledAsyncPipeline<TRequest, TResponse>(
             Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
             where TRequest : IRequest<TResponse>
         {
@@ -44,14 +85,6 @@ namespace Routya.Core.Dispatchers.Pipelines
                 requestHandlerRegistry.TryGetValue(syncHandlerType, out syncHandlerInfo);
             }
             
-            // Track if we need to populate registry from fallback on first call
-            bool needsFallbackCheck = asyncHandlerInfo == null && syncHandlerInfo == null;
-            
-            // Build expression tree for the compiled pipeline
-            var providerParam = Expression.Parameter(typeof(IServiceProvider), "provider");
-            var requestParam = Expression.Parameter(typeof(TRequest), "request");
-            var ctParam = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
-            
             return (provider, request, cancellationToken) =>
             {
                 // Resolve handler
@@ -64,35 +97,13 @@ namespace Routya.Core.Dispatchers.Pipelines
                 else
                 {
                     asyncHandler = provider.GetService<IAsyncRequestHandler<TRequest, TResponse>>();
-                    
-                    if (asyncHandler != null && needsFallbackCheck)
-                    {
-                        var handlerConcreteType = asyncHandler.GetType();
-                        lock (requestHandlerRegistry)
-                        {
-                            if (!requestHandlerRegistry.ContainsKey(asyncHandlerType))
-                            {
-                                requestHandlerRegistry[asyncHandlerType] = new RequestHandlerInfo
-                                {
-                                    ConcreteType = handlerConcreteType,
-                                    Lifetime = ServiceLifetime.Transient
-                                };
-                            }
-                        }
-                    }
                 }
                 
                 if (asyncHandler != null)
                 {
-                    // Get or create cached behavior array for this request type
-                    var behaviors = (IPipelineBehavior<TRequest, TResponse>[])_behaviorCache.GetOrAdd(
-                        typeof(TRequest),
-                        _ =>
-                        {
-                            var behaviorServices = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
-                            return behaviorServices as IPipelineBehavior<TRequest, TResponse>[] ?? behaviorServices.ToArray();
-                        });
-                    
+                    // Resolve behaviors from the current dispatch scope, never from a cache
+                    var behaviors = ResolveBehaviors<TRequest, TResponse>(provider);
+
                     if (behaviors.Length == 0)
                     {
                         // Fast path: No behaviors, direct handler invocation
@@ -118,31 +129,10 @@ namespace Routya.Core.Dispatchers.Pipelines
                         throw new InvalidOperationException($"No handler found for request type {typeof(TRequest).Name}");
                     }
                     
-                    if (needsFallbackCheck)
-                    {
-                        var handlerConcreteType = syncHandler.GetType();
-                        lock (requestHandlerRegistry)
-                        {
-                            if (!requestHandlerRegistry.ContainsKey(syncHandlerType))
-                            {
-                                requestHandlerRegistry[syncHandlerType] = new RequestHandlerInfo
-                                {
-                                    ConcreteType = handlerConcreteType,
-                                    Lifetime = ServiceLifetime.Transient
-                                };
-                            }
-                        }
-                    }
                 }
                 
-                var syncBehaviors = (IPipelineBehavior<TRequest, TResponse>[])_behaviorCache.GetOrAdd(
-                    typeof(TRequest),
-                    _ =>
-                    {
-                        var behaviorServices = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
-                        return behaviorServices as IPipelineBehavior<TRequest, TResponse>[] ?? behaviorServices.ToArray();
-                    });
-                
+                var syncBehaviors = ResolveBehaviors<TRequest, TResponse>(provider);
+
                 if (syncBehaviors.Length == 0)
                 {
                     return Task.FromResult(syncHandler!.Handle(request));
@@ -236,15 +226,14 @@ namespace Routya.Core.Dispatchers.Pipelines
             return current(cancellationToken);
         }
 
-        public static Func<IServiceProvider, TRequest, TResponse> GetOrAddSync<TRequest, TResponse>(
-            Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
+        public Func<IServiceProvider, TRequest, TResponse> GetOrAddSync<TRequest, TResponse>()
             where TRequest : IRequest<TResponse>
         {
             return (Func<IServiceProvider, TRequest, TResponse>)_syncCache.GetOrAdd(typeof(TRequest), _ =>
-                BuildPrecompiledSyncPipeline<TRequest, TResponse>(requestHandlerRegistry));
+                BuildPrecompiledSyncPipeline<TRequest, TResponse>(_requestHandlerRegistry));
         }
 
-        private static Func<IServiceProvider, TRequest, TResponse> BuildPrecompiledSyncPipeline<TRequest, TResponse>(
+        private Func<IServiceProvider, TRequest, TResponse> BuildPrecompiledSyncPipeline<TRequest, TResponse>(
             Dictionary<Type, RequestHandlerInfo> requestHandlerRegistry)
             where TRequest : IRequest<TResponse>
         {
@@ -253,9 +242,6 @@ namespace Routya.Core.Dispatchers.Pipelines
 
             // Check registry for handler info
             requestHandlerRegistry.TryGetValue(handlerType, out var handlerInfo);
-            
-            // Track if we need to populate registry from fallback on first call
-            bool needsFallbackCheck = handlerInfo == null;
             
             return (provider, request) =>
             {
@@ -276,36 +262,11 @@ namespace Routya.Core.Dispatchers.Pipelines
                         throw new InvalidOperationException($"No handler found for request type {typeof(TRequest).Name}");
                     }
                     
-                    // If found via fallback, add to registry for future optimization
-                    if (needsFallbackCheck)
-                    {
-                        var handlerConcreteType = handler.GetType();
-                        var lifetime = ServiceLifetime.Transient; // Default fallback lifetime
-                        
-                        lock (requestHandlerRegistry)
-                        {
-                            // Double-check it wasn't added by another thread
-                            if (!requestHandlerRegistry.ContainsKey(handlerType))
-                            {
-                                requestHandlerRegistry[handlerType] = new RequestHandlerInfo
-                                {
-                                    ConcreteType = handlerConcreteType,
-                                    Lifetime = lifetime
-                                };
-                            }
-                        }
-                    }
                 }
                 
-                // Get or create cached behavior array for this request type
-                var behaviors = (IPipelineBehavior<TRequest, TResponse>[])_behaviorCache.GetOrAdd(
-                    typeof(TRequest),
-                    _ =>
-                    {
-                        var behaviorServices = provider.GetServices<IPipelineBehavior<TRequest, TResponse>>();
-                        return behaviorServices as IPipelineBehavior<TRequest, TResponse>[] ?? behaviorServices.ToArray();
-                    });
-                
+                // Resolve behaviors from the current dispatch scope, never from a cache
+                var behaviors = ResolveBehaviors<TRequest, TResponse>(provider);
+
                 if (behaviors.Length == 0)
                 {
                     // Fast path: No behaviors, direct handler invocation

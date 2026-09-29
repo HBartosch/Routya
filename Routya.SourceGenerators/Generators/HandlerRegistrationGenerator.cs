@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Routya.SourceGenerators.Emitters;
@@ -19,6 +19,19 @@ namespace Routya.SourceGenerators.Generators
         private const string IRequestHandlerName = "Routya.Core.Abstractions.IRequestHandler";
         private const string IAsyncRequestHandlerName = "Routya.Core.Abstractions.IAsyncRequestHandler";
         private const string INotificationHandlerName = "Routya.Core.Abstractions.INotificationHandler";
+        private const string IStreamRequestHandlerName = "Routya.Core.Abstractions.IStreamRequestHandler";
+
+        private static bool IsRequestHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("IRequestHandler", arity: 2);
+
+        private static bool IsAsyncRequestHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("IAsyncRequestHandler", arity: 2);
+
+        private static bool IsNotificationHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("INotificationHandler", arity: 1);
+
+        private static bool IsStreamRequestHandler(INamedTypeSymbol iface)
+            => iface.IsRoutyaInterface("IStreamRequestHandler", arity: 2);
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
@@ -40,28 +53,31 @@ namespace Routya.SourceGenerators.Generators
 
         private static bool IsPotentialHandlerClass(SyntaxNode node)
         {
-            // Look for class declarations with base types or interfaces
-            return node is ClassDeclarationSyntax classDecl &&
-                   classDecl.BaseList is not null &&
-                   classDecl.BaseList.Types.Count > 0;
+            // TypeDeclarationSyntax rather than ClassDeclarationSyntax, so that a handler declared
+            // as a record or a struct is considered too. Interfaces are excluded below by IsAbstract.
+            return node is TypeDeclarationSyntax typeDecl &&
+                   typeDecl.BaseList is not null &&
+                   typeDecl.BaseList.Types.Count > 0;
         }
 
         private static INamedTypeSymbol? GetSemanticTargetForGeneration(GeneratorSyntaxContext context)
         {
-            var classDeclaration = (ClassDeclarationSyntax)context.Node;
-            var symbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
-            
-            if (symbol is null || symbol.IsAbstract || symbol.DeclaredAccessibility != Accessibility.Public)
+            var typeDeclaration = (TypeDeclarationSyntax)context.Node;
+            var symbol = context.SemanticModel.GetDeclaredSymbol(typeDeclaration);
+
+            // Accessibility is deliberately not filtered here. An internal handler is registered and
+            // dispatched from inside generated method bodies in the same assembly, so it works, and
+            // "internal sealed class Handler" is a common convention. Whether a typed member can be
+            // generated for it is decided later, by HandlerDescriptor.SupportsTypedDispatch.
+            if (symbol is null || symbol.IsAbstract)
                 return null;
 
             // Check if it implements any handler interfaces
             var interfaces = symbol.AllInterfaces;
             foreach (var iface in interfaces)
             {
-                var fullName = GetFullTypeName(iface);
-                if (fullName.StartsWith(IRequestHandlerName) ||
-                    fullName.StartsWith(IAsyncRequestHandlerName) ||
-                    fullName.StartsWith(INotificationHandlerName))
+                if (IsRequestHandler(iface) || IsAsyncRequestHandler(iface)
+                    || IsNotificationHandler(iface) || IsStreamRequestHandler(iface))
                 {
                     return symbol;
                 }
@@ -89,9 +105,7 @@ namespace Routya.SourceGenerators.Generators
 
                 foreach (var iface in handler.AllInterfaces)
                 {
-                    var fullName = GetFullTypeName(iface);
-
-                    if (fullName.StartsWith(IRequestHandlerName))
+                    if (IsRequestHandler(iface))
                     {
                         var descriptor = CreateRequestHandlerDescriptor(handler, iface, isAsync: false);
                         requestHandlers.Add(descriptor);
@@ -103,7 +117,7 @@ namespace Routya.SourceGenerators.Generators
                             handler.Name,
                             descriptor.RequestType.Name));
                     }
-                    else if (fullName.StartsWith(IAsyncRequestHandlerName))
+                    else if (IsAsyncRequestHandler(iface))
                     {
                         var descriptor = CreateRequestHandlerDescriptor(handler, iface, isAsync: true);
                         requestHandlers.Add(descriptor);
@@ -115,7 +129,21 @@ namespace Routya.SourceGenerators.Generators
                             handler.Name,
                             descriptor.RequestType.Name));
                     }
-                    else if (fullName.StartsWith(INotificationHandlerName))
+                    else if (IsStreamRequestHandler(iface))
+                    {
+                        var descriptor = CreateRequestHandlerDescriptor(handler, iface, isAsync: true);
+                        descriptor.IsStream = true;
+                        descriptor.HandlerInterfaceName = IStreamRequestHandlerName;
+                        requestHandlers.Add(descriptor);
+
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.HandlerDiscovered,
+                            Location.None,
+                            "StreamRequest",
+                            handler.Name,
+                            descriptor.RequestType.Name));
+                    }
+                    else if (IsNotificationHandler(iface))
                     {
                         var descriptor = CreateNotificationHandlerDescriptor(handler, iface);
                         notificationHandlers.Add(descriptor);
@@ -132,7 +160,7 @@ namespace Routya.SourceGenerators.Generators
 
             // Check for duplicate request handlers
             var duplicates = requestHandlers
-                .GroupBy(h => GetFullTypeName(h.RequestType))
+                .GroupBy(h => h.RequestType.ToGeneratedName())
                 .Where(g => g.Count() > 1)
                 .ToList();
 
@@ -146,16 +174,39 @@ namespace Routya.SourceGenerators.Generators
                     handlerNames));
             }
 
-            // Generate the registration code
+            // Tell the user about any handler that is registered but gets no typed member, rather
+            // than leaving its absence from IGeneratedRoutya unexplained.
+            foreach (var handler in requestHandlers.Concat(notificationHandlers))
+            {
+                if (handler.SupportsTypedDispatch)
+                    continue;
+
+                var inaccessibleType = handler.RequestType.IsExternallyVisible()
+                    ? handler.ResponseType!
+                    : handler.RequestType;
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.TypedDispatchNotGenerated,
+                    handler.HandlerType.Locations.FirstOrDefault() ?? Location.None,
+                    handler.HandlerType.Name,
+                    inaccessibleType.ToDisplayString()));
+            }
+
+            // Generate the registration code. Every discovered handler is registered, including
+            // those without a typed member.
             var source = HandlerRegistrationEmitter.Generate(requestHandlers, notificationHandlers);
             context.AddSource("RoutyaGenerated.Registration.g.cs", source);
 
-            // Generate the optimized dispatcher
+            // Generate the optimized dispatcher. Only handlers whose types can appear in a public
+            // signature get a typed method.
             var notificationGroups = notificationHandlers
-                .GroupBy(h => GetFullTypeName(h.RequestType))
+                .Where(h => h.SupportsTypedDispatch)
+                .GroupBy(h => h.RequestType.ToGeneratedName())
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var dispatcherSource = DispatcherEmitter.EmitGeneratedDispatcher(requestHandlers, notificationGroups);
+            var dispatcherSource = DispatcherEmitter.EmitGeneratedDispatcher(
+                requestHandlers.Where(h => h.SupportsTypedDispatch).ToList(),
+                notificationGroups);
             context.AddSource("RoutyaGenerated.Dispatcher.g.cs", dispatcherSource);
 
             context.ReportDiagnostic(Diagnostic.Create(
@@ -176,8 +227,8 @@ namespace Routya.SourceGenerators.Generators
             return new HandlerDescriptor
             {
                 HandlerType = handler,
-                RequestType = (INamedTypeSymbol)typeArgs[0],
-                ResponseType = (INamedTypeSymbol)typeArgs[1],
+                RequestType = typeArgs[0],
+                ResponseType = typeArgs[1],
                 IsAsync = isAsync,
                 IsNotification = false,
                 Lifetime = DetectLifetime(handler),
@@ -195,7 +246,7 @@ namespace Routya.SourceGenerators.Generators
             return new HandlerDescriptor
             {
                 HandlerType = handler,
-                RequestType = (INamedTypeSymbol)typeArgs[0],
+                RequestType = typeArgs[0],
                 ResponseType = null,
                 IsAsync = true, // Notification handlers are always async
                 IsNotification = true,
@@ -213,13 +264,5 @@ namespace Routya.SourceGenerators.Generators
             return ServiceLifetime.Transient;
         }
 
-        private static string GetFullTypeName(ISymbol symbol)
-        {
-            if (symbol.ContainingNamespace?.IsGlobalNamespace == false)
-            {
-                return $"{symbol.ContainingNamespace}.{symbol.Name}";
-            }
-            return symbol.Name;
-        }
     }
 }

@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 
 namespace Routya.SourceGenerators.Models
 {
@@ -18,25 +18,37 @@ namespace Routya.SourceGenerators.Models
     internal sealed class HandlerDescriptor
     {
         public INamedTypeSymbol HandlerType { get; set; } = null!;
-        public INamedTypeSymbol RequestType { get; set; } = null!;
-        public INamedTypeSymbol? ResponseType { get; set; }
+
+        // Request and response are ITypeSymbol rather than INamedTypeSymbol because a type argument
+        // is not necessarily a named type. IRequest<string[]> yields an IArrayTypeSymbol, and a
+        // generic handler yields an ITypeParameterSymbol. Casting either to INamedTypeSymbol threw
+        // an InvalidCastException, which Roslyn surfaced as CS8785 and which stopped the generator
+        // from contributing any output at all.
+        public ITypeSymbol RequestType { get; set; } = null!;
+        public ITypeSymbol? ResponseType { get; set; }
+
         public bool IsAsync { get; set; }
         public bool IsNotification { get; set; }
+
+        /// <summary>Whether this handler implements IStreamRequestHandler and produces a sequence.</summary>
+        public bool IsStream { get; set; }
+
+        /// <summary>
+        /// Whether a typed member can be generated for this handler on the public IGeneratedRoutya
+        /// interface and dispatcher. False when the request or response type is not externally
+        /// visible, because a public signature cannot mention it. The handler is still registered,
+        /// so it remains reachable through runtime IRoutya dispatch.
+        /// </summary>
+        public bool SupportsTypedDispatch
+            => RequestType.IsExternallyVisible()
+               && (ResponseType == null || ResponseType.IsExternallyVisible());
         public ServiceLifetime Lifetime { get; set; } = ServiceLifetime.Transient;
         public string HandlerInterfaceName { get; set; } = null!;
 
         /// <summary>
-        /// Gets the fully qualified handler type name (e.g., "MyNamespace.MyHandler").
+        /// Gets the handler type name as it should appear in generated source, for example
+        /// "global::MyNamespace.MyFeature.Handler".
         /// </summary>
-        public string ConcreteType => GetFullTypeName(HandlerType);
-
-        private static string GetFullTypeName(INamedTypeSymbol symbol)
-        {
-            if (symbol.ContainingNamespace?.IsGlobalNamespace == false)
-            {
-                return $"{symbol.ContainingNamespace}.{symbol.Name}";
-            }
-            return symbol.Name;
-        }
+        public string ConcreteType => HandlerType.ToGeneratedName();
     }
 }

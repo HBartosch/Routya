@@ -16,6 +16,29 @@ public class GetProductHandler : IAsyncRequestHandler<GetProductRequest, Product
         => Task.FromResult(new Product(request.Id, $"Product_{request.Id}"));
 }
 
+// ── Synchronous request / response ──────────────────────────────────────────
+// Implements IRequestHandler rather than IAsyncRequestHandler, so the generator emits a
+// synchronous Send member for it rather than SendAsync.
+
+public record CalculateTotalRequest(int Quantity, decimal UnitPrice) : IRequest<decimal>;
+
+public class CalculateTotalHandler : IRequestHandler<CalculateTotalRequest, decimal>
+{
+    public decimal Handle(CalculateTotalRequest request) => request.Quantity * request.UnitPrice;
+}
+
+// ── Internal handler with a public request ──────────────────────────────────
+// The Clean Architecture convention: the request is part of the public contract, the handler is
+// an implementation detail. The generator must still discover and register it.
+
+public record ArchiveOrderCommand(int OrderId) : IRequest<bool>;
+
+internal sealed class ArchiveOrderHandler : IAsyncRequestHandler<ArchiveOrderCommand, bool>
+{
+    public Task<bool> HandleAsync(ArchiveOrderCommand request, CancellationToken cancellationToken)
+        => Task.FromResult(request.OrderId > 0);
+}
+
 // ── Notification ────────────────────────────────────────────────────────────
 
 public class ProductCreatedNotification : INotification
@@ -49,6 +72,34 @@ public class AuditHandler : INotificationHandler<ProductCreatedNotification>
     }
 }
 
+// ── Notification fan out where one handler faults ───────────────────────────
+// Exactly two handlers, which is the count the emitter used to special case by starting both
+// tasks and then awaiting them one after another.
+
+public class FanOutFailureNotification : INotification { }
+
+public class FanOutThrowingHandler : INotificationHandler<FanOutFailureNotification>
+{
+    // Faults asynchronously rather than throwing synchronously, so that both handlers are
+    // actually started and the test exercises how their tasks are awaited.
+    public async Task Handle(FanOutFailureNotification notification, CancellationToken cancellationToken = default)
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("handler failed");
+    }
+}
+
+public class FanOutSlowHandler : INotificationHandler<FanOutFailureNotification>
+{
+    public static bool Completed { get; set; }
+
+    public async Task Handle(FanOutFailureNotification notification, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(75, CancellationToken.None);
+        Completed = true;
+    }
+}
+
 // ── Test infrastructure ─────────────────────────────────────────────────────
 
 /// <summary>Singleton injected into handlers so tests can observe invocations.</summary>
@@ -77,5 +128,28 @@ public class TrackingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest,
     {
         _tracker.Record(nameof(TrackingBehavior<TRequest, TResponse>));
         return await next(cancellationToken);
+    }
+}
+
+// ── Streaming ───────────────────────────────────────────────────────────────
+// First class IStreamRequest, dispatched through the generated CreateStream member.
+
+public record CountProductsQuery(int Count) : IStreamRequest<int>;
+
+public class CountProductsHandler : IStreamRequestHandler<CountProductsQuery, int>
+{
+    public static int ItemsProduced { get; set; }
+
+    public async IAsyncEnumerable<int> Handle(
+        CountProductsQuery request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        for (var i = 1; i <= request.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+            ItemsProduced++;
+            yield return i;
+        }
     }
 }

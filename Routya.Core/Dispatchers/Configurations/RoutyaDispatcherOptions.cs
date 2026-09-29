@@ -15,10 +15,9 @@ namespace Routya.Core.Dispatchers.Configurations
         /// <remarks>
         /// <para>
         /// <b>Scoped (Default):</b> Creates a new DI scope for each dispatch. Safe for handlers with scoped dependencies like DbContext.
-        /// Performance: ~440ns per request.
         /// </para>
         /// <para>
-        /// <b>Root:</b> Resolves handlers from the root provider without creating a scope. Fastest option (~334ns) but requires all handlers to be Singleton or Transient.
+        /// <b>Root:</b> Resolves handlers from the root provider without creating a scope. The fastest option, but it requires all handlers to be Singleton or Transient.
         /// Will fail if handlers are registered as Scoped or depend on scoped services.
         /// </para>
         /// <para>
@@ -38,16 +37,16 @@ namespace Routya.Core.Dispatchers.Configurations
         /// <remarks>
         /// <para>
         /// <b>Scoped (Default):</b> One instance per scope. Safe for handlers with DbContext or other scoped dependencies.
-        /// Performance: ~440ns per request, ~238ns per notification.
+        /// Allocates about 544 bytes per request and about 392 bytes per notification.
         /// </para>
         /// <para>
         /// <b>Singleton:</b> Single instance for the application lifetime. Fastest option for stateless handlers.
-        /// Performance: ~334ns per request, ~111ns per notification (30% faster than MediatR).
+        /// Allocates about 104 bytes per request and about 32 bytes per notification when combined
+        /// with the Root dispatch scope.
         /// ⚠️ Handlers must be thread-safe and stateless.
         /// </para>
         /// <para>
         /// <b>Transient:</b> New instance for every dispatch. Maximum isolation but slightly slower.
-        /// Performance: ~336ns per request, ~146ns per notification.
         /// </para>
         /// <para>
         /// For fine-grained control, use <c>AddRoutyaAsyncRequestHandler&lt;TRequest, TResponse, THandler&gt;(lifetime)</c> or

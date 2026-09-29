@@ -16,7 +16,15 @@
 	  <PackageIcon>PackageIconResized.png</PackageIcon>
 	  <PackageLicenseFile>LICENSE</PackageLicenseFile>
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
-	  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	  <!--
+	    Routya.Events is upcoming work and has no implementation yet, so it must not produce a
+	    package. GeneratePackageOnBuild was writing a .nupkg carrying the real Routya.Events
+	    PackageId on every build, and a NuGet version once pushed can only be delisted, never
+	    withdrawn. Set IsPackable back to true, with a real version and description, when there is
+	    something to ship.
+	  -->
+	  <IsPackable>false</IsPackable>
+	  <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	  <LangVersion>8.0</LangVersion>
   </PropertyGroup>
 

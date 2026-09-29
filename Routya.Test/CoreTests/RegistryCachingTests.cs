@@ -11,54 +11,52 @@ namespace Routya.Test.CoreTests
     public class RegistryCachingTests
     {
         [Fact]
-        public async Task Request_FallbackHandler_ShouldBeAddedToRegistry_AfterFirstCall()
+        public async Task Request_HandlerOutsideTheRegistry_ShouldBeResolved_OnEveryCall()
         {
             // Arrange
             var services = new ServiceCollection();
-            
+
             // Register Routya WITHOUT assembly scanning (empty registry)
             services.AddRoutya();
-            
-            // Register handler using traditional DI (not in registry initially)
+
+            // Register handler using traditional DI (not in the registry)
             services.AddScoped<IAsyncRequestHandler<TestRequest, string>, TestRequestHandler>();
-            
-            var provider = services.BuildServiceProvider();
+
+            var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             var dispatcher = provider.GetRequiredService<IRoutya>();
-            
-            // Act - First call uses fallback
+
+            // Act - handlers outside the registry are resolved through their interface every call
             var result1 = await dispatcher.SendAsync<TestRequest, string>(new TestRequest { Value = "First" });
-            
-            // Act - Second call should use registry (handler was cached after first call)
             var result2 = await dispatcher.SendAsync<TestRequest, string>(new TestRequest { Value = "Second" });
-            
+
             // Assert
             Assert.Equal("Handler processed: First", result1);
             Assert.Equal("Handler processed: Second", result2);
         }
         
         [Fact]
-        public async Task Notification_FallbackHandler_ShouldBeAddedToRegistry_AfterFirstCall()
+        public async Task Notification_FallbackHandler_ShouldBeInvoked_OnEveryPublish()
         {
             // Arrange
             var services = new ServiceCollection();
-            
+
             // Register Routya WITHOUT assembly scanning (empty registry)
             services.AddRoutya();
-            
-            // Register handler using traditional DI (not in registry initially)
+
+            // Register handler using traditional DI (not in registry)
             services.AddScoped<INotificationHandler<TestNotification>, TestNotificationHandler>();
-            
-            var provider = services.BuildServiceProvider();
+
+            var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             var dispatcher = provider.GetRequiredService<IRoutya>();
-            
-            // Act - First call uses fallback
+
+            TestNotificationHandler.MessagesReceived.Clear();
+
+            // Act - handlers outside the registry are resolved from the dispatch scope every publish
             await dispatcher.PublishAsync(new TestNotification { Message = "First" });
-            
-            // Act - Second call should use registry (handler was cached after first call)
             await dispatcher.PublishAsync(new TestNotification { Message = "Second" });
-            
-            // Assert - Both calls should succeed without errors
-            Assert.True(true);
+
+            // Assert - the handler runs on both publishes, not just the first
+            Assert.Equal(new[] { "First", "Second" }, TestNotificationHandler.MessagesReceived);
         }
         
         // Test types
@@ -82,9 +80,11 @@ namespace Routya.Test.CoreTests
         
         public class TestNotificationHandler : INotificationHandler<TestNotification>
         {
+            public static List<string> MessagesReceived { get; } = new List<string>();
+
             public Task Handle(TestNotification notification, CancellationToken cancellationToken = default)
             {
-                // Just a simple handler
+                MessagesReceived.Add(notification.Message);
                 return Task.CompletedTask;
             }
         }

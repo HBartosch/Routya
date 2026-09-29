@@ -10,17 +10,30 @@ using System.Threading.Tasks;
 namespace Routya.Core.Dispatchers.Requests
 {
     /// <summary>
-    /// High-performance request dispatcher using compiled expression trees for fast handler invocation.
+    /// Request dispatcher that builds one cached dispatch delegate per request type.
     /// </summary>
     /// <remarks>
-    /// This dispatcher uses a registry-based approach with compiled expressions to eliminate reflection overhead.
-    /// Handlers are resolved from the registry first, falling back to standard DI resolution if not found.
+    /// <para>
+    /// The delegate is built once per request type and reused, so the handler lookup is not repeated
+    /// on every dispatch. Handlers described in the registry, meaning those registered through the
+    /// <c>AddRoutya*Handler</c> methods or by assembly scanning, are resolved directly by their
+    /// concrete type. Anything else is resolved through its handler interface.
+    /// </para>
+    /// <para>
+    /// No expression trees are built or compiled. Everything here is ordinary delegates and generic
+    /// dispatch, which keeps the type free of the runtime code generation that trimming and Native
+    /// AOT cannot support.
+    /// </para>
     /// </remarks>
     public class CompiledRequestInvokerDispatcher : IRoutyaRequestDispatcher
     {
         private readonly IServiceProvider _provider;
         private readonly RoutyaDispatcherOptions _options;
         private readonly System.Collections.Generic.Dictionary<Type, RequestHandlerInfo> _requestHandlerRegistry;
+
+        // Owned per dispatcher, and therefore per DI container, so that no pipeline state is
+        // shared between containers living in the same process.
+        private readonly CompiledPipelineFactory _pipelineFactory;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CompiledRequestInvokerDispatcher"/> class.
@@ -36,13 +49,14 @@ namespace Routya.Core.Dispatchers.Requests
             _provider = provider;
             _requestHandlerRegistry = requestHandlerRegistry;
             _options = options ?? new RoutyaDispatcherOptions();
+            _pipelineFactory = new CompiledPipelineFactory(requestHandlerRegistry);
         }
 
         /// <inheritdoc />
         public TResponse Send<TRequest, TResponse>(TRequest request)
             where TRequest : IRequest<TResponse>
         {
-            var pipeline = CompiledPipelineFactory.GetOrAddSync<TRequest, TResponse>(_requestHandlerRegistry);
+            var pipeline = _pipelineFactory.GetOrAddSync<TRequest, TResponse>();
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {
@@ -57,7 +71,7 @@ namespace Routya.Core.Dispatchers.Requests
         public async Task<TResponse> SendAsync<TRequest, TResponse>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest<TResponse>
         {
-            var pipeline = CompiledPipelineFactory.GetOrAdd<TRequest, TResponse>(_requestHandlerRegistry);
+            var pipeline = _pipelineFactory.GetOrAdd<TRequest, TResponse>();
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {

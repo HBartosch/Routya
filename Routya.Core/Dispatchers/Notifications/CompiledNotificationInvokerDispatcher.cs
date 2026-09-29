@@ -6,19 +6,31 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Routya.Core.Dispatchers.Notifications
 {
     /// <summary>
-    /// High-performance notification dispatcher using compiled expression trees for fast handler invocation.
+    /// Notification dispatcher that fans a notification out to every registered handler.
     /// </summary>
     /// <remarks>
-    /// This dispatcher uses a registry-based approach with compiled expressions and per-instance caching.
-    /// Handlers are discovered from the registry and compiled on first use, then cached for subsequent dispatches.
-    /// Supports both sequential and parallel notification publishing strategies.
+    /// <para>
+    /// Handlers described in the registry, meaning those registered through
+    /// <c>AddRoutyaNotificationHandler</c> or by assembly scanning, get a wrapper built once per
+    /// notification type. Singleton handlers are resolved once; Scoped and Transient handlers are
+    /// resolved from the dispatch scope on every publish. Handlers registered directly against
+    /// <c>IServiceCollection</c> are resolved through their interface on every publish, because
+    /// their concrete types are not guaranteed to be registered and they may be Scoped.
+    /// </para>
+    /// <para>
+    /// Supports both sequential and parallel publishing strategies.
+    /// </para>
+    /// <para>
+    /// No expression trees are built or compiled. Everything here is ordinary delegates and generic
+    /// dispatch, which keeps the type free of the runtime code generation that trimming and Native
+    /// AOT cannot support.
+    /// </para>
     /// </remarks>
     public sealed class CompiledNotificationDispatcher : IRoutyaNotificationDispatcher
     {
@@ -26,8 +38,19 @@ namespace Routya.Core.Dispatchers.Notifications
         private readonly RoutyaDispatcherOptions _options;
         private readonly Dictionary<Type, List<Extensions.NotificationHandlerInfo>> _notificationHandlerRegistry;
 
-        // Cache per dispatcher instance (not static) to avoid cross-contamination between DI containers
+        // Cache per dispatcher instance (not static) to avoid cross-contamination between DI containers.
+        // Only holds wrappers built from the registry, where the concrete handler type and lifetime
+        // are both known, so resolution can be deferred to the dispatch scope safely.
         private readonly ConcurrentDictionary<Type, NotificationHandlerWrapper[]> _cache = new ConcurrentDictionary<Type, NotificationHandlerWrapper[]>();
+
+        // Notification types whose handlers are registered directly against IServiceCollection rather
+        // than through the registry. Their concrete types are not guaranteed to be registered in DI and
+        // they may be Scoped, so they are resolved from the dispatch scope on every publish.
+        private readonly ConcurrentDictionary<Type, bool> _requiresDynamicResolution = new ConcurrentDictionary<Type, bool>();
+
+        // Notification types known to have no handlers at all. Registrations are immutable once the
+        // container is built, so publishing these can return without creating a dispatch scope.
+        private readonly ConcurrentDictionary<Type, bool> _knownEmpty = new ConcurrentDictionary<Type, bool>();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CompiledNotificationDispatcher"/> class.
@@ -52,106 +75,292 @@ namespace Routya.Core.Dispatchers.Notifications
             CancellationToken cancellationToken = default)
             where TNotification : INotification
         {
-            var notificationType = typeof(TNotification);
-            var handlers = _cache.GetOrAdd(notificationType, _ => BuildHandlerWrappers<TNotification>());
-
-            if (handlers.Length == 0)
+            // Fast path: this notification type is known to have no handlers, so there is nothing
+            // to publish and no dispatch scope needs to be created.
+            if (_knownEmpty.ContainsKey(typeof(TNotification)))
                 return;
+
+            // Parallel dispatch under Scoped gives every handler its own scope. The handlers run
+            // concurrently, so a single shared scope would hand the same scoped dependency to all of
+            // them at once, and a DbContext throws "A second operation was started on this context"
+            // when that happens. Sequential dispatch keeps one shared scope on purpose: handlers run
+            // one after another, so there is no concurrency hazard, and sharing is useful when a
+            // later handler commits work an earlier one staged.
+            if (_options.Scope == RoutyaDispatchScope.Scoped
+                && strategy == NotificationDispatchStrategy.Parallel)
+            {
+                await PublishParallelWithScopePerHandlerAsync(notification, cancellationToken).ConfigureAwait(false);
+                return;
+            }
 
             if (_options.Scope == RoutyaDispatchScope.Scoped)
             {
                 using var scope = _provider.CreateScope();
-                if (strategy == NotificationDispatchStrategy.Sequential)
-                {
-                    await InvokeSequential(handlers, scope.ServiceProvider, notification!, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    await InvokeParallel(handlers, scope.ServiceProvider, notification!, cancellationToken).ConfigureAwait(false);
-                }
+                await PublishCoreAsync(scope.ServiceProvider, notification, strategy, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                if (strategy == NotificationDispatchStrategy.Sequential)
-                {
-                    await InvokeSequential(handlers, _provider, notification!, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    await InvokeParallel(handlers, _provider, notification!, cancellationToken).ConfigureAwait(false);
-                }
+                await PublishCoreAsync(_provider, notification, strategy, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        private NotificationHandlerWrapper[] BuildHandlerWrappers<TNotification>() where TNotification : INotification
+        /// <summary>
+        /// Publishes to every handler concurrently, each in its own dispatch scope.
+        /// </summary>
+        private async Task PublishParallelWithScopePerHandlerAsync<TNotification>(
+            TNotification notification,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
         {
-            var handlerType = typeof(INotificationHandler<TNotification>);
-            
-            // Try to get handler info from registry first (fast path)
-            if (_notificationHandlerRegistry.TryGetValue(handlerType, out var handlerInfos) && handlerInfos.Count > 0)
-            {
-                var wrappers = new NotificationHandlerWrapper[handlerInfos.Count];
+            var notificationType = typeof(TNotification);
 
-                for (int i = 0; i < handlerInfos.Count; i++)
+            if (_cache.TryGetValue(notificationType, out var cachedWrappers))
+            {
+                await InvokeWrappersInSeparateScopesAsync(cachedWrappers, notification!, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (!_requiresDynamicResolution.ContainsKey(notificationType))
+            {
+                var handlerType = typeof(INotificationHandler<TNotification>);
+
+                if (_notificationHandlerRegistry.TryGetValue(handlerType, out var handlerInfos) && handlerInfos.Count > 0)
                 {
-                    var handlerInfo = handlerInfos[i];
-                    
-                    // For Singleton handlers, resolve and cache the instance NOW
-                    if (handlerInfo.Lifetime == ServiceLifetime.Singleton)
-                    {
-                        var singletonInstance = (INotificationHandler<TNotification>)_provider.GetRequiredService(handlerInfo.ConcreteType);
-                        wrappers[i] = new NotificationHandlerWrapper<TNotification>(
-                            singletonInstance, 
-                            handlerInfo.Lifetime, 
-                            handlerInfo.ConcreteType);
-                    }
-                    else
-                    {
-                        // For Scoped/Transient, just store the type info
-                        wrappers[i] = new NotificationHandlerWrapper<TNotification>(
-                            null!, 
-                            handlerInfo.Lifetime, 
-                            handlerInfo.ConcreteType);
-                    }
+                    var wrappers = _cache.GetOrAdd(notificationType, _ => BuildRegistryWrappers<TNotification>(handlerInfos));
+                    await InvokeWrappersInSeparateScopesAsync(wrappers, notification!, cancellationToken).ConfigureAwait(false);
+                    return;
                 }
 
-                return wrappers;
+                _requiresDynamicResolution[notificationType] = true;
             }
-            
-            // Fallback: Not in registry, try GetServices (for backward compatibility)
-            var handlers = _provider.GetServices<INotificationHandler<TNotification>>().ToArray();
+
+            await InvokeResolvedInSeparateScopesAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+
+        private Task InvokeWrappersInSeparateScopesAsync(
+            NotificationHandlerWrapper[] handlers,
+            object notification,
+            CancellationToken cancellationToken)
+        {
             if (handlers.Length == 0)
-                return Array.Empty<NotificationHandlerWrapper>();
-            
-            // Add discovered handlers to registry for future optimization
-            lock (_notificationHandlerRegistry)
-            {
-                // Double-check it wasn't added by another thread
-                if (!_notificationHandlerRegistry.ContainsKey(handlerType))
-                {
-                    var discoveredHandlerInfos = new List<Extensions.NotificationHandlerInfo>();
-                    foreach (var handler in handlers)
-                    {
-                        discoveredHandlerInfos.Add(new Extensions.NotificationHandlerInfo
-                        {
-                            ConcreteType = handler.GetType(),
-                            Lifetime = ServiceLifetime.Transient // Default fallback lifetime
-                        });
-                    }
-                    _notificationHandlerRegistry[handlerType] = discoveredHandlerInfos;
-                }
-            }
-            
-            // Build wrappers for handlers found via GetServices
-            // Cache the actual handler instances since we already resolved them
-            var fallbackWrappers = new NotificationHandlerWrapper[handlers.Length];
+                return Task.CompletedTask;
+
+            var tasks = new Task[handlers.Length];
+
             for (int i = 0; i < handlers.Length; i++)
             {
-                // Store the resolved handler instance directly (no type, since we already have the instance)
-                fallbackWrappers[i] = new NotificationHandlerWrapperWithInstance<TNotification>(handlers[i]);
+                tasks[i] = InvokeWrapperInOwnScopeAsync(handlers[i], notification, cancellationToken);
             }
-            
-            return fallbackWrappers;
+
+            return Task.WhenAll(tasks);
+        }
+
+        private async Task InvokeWrapperInOwnScopeAsync(
+            NotificationHandlerWrapper handler,
+            object notification,
+            CancellationToken cancellationToken)
+        {
+            using var scope = _provider.CreateScope();
+            await handler.Handle(scope.ServiceProvider, notification, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Parallel dispatch for handlers registered directly against <c>IServiceCollection</c>.
+        /// </summary>
+        /// <remarks>
+        /// These handlers can only be reached through their interface, and resolving the whole
+        /// enumerable once would bind every handler instance to a single scope, which is the thing
+        /// being avoided. Each handler is therefore resolved inside its own scope, which costs one
+        /// extra resolution of the enumerable per handler. Handler counts are small in practice, and
+        /// the registry path above avoids this entirely.
+        /// </remarks>
+        private async Task InvokeResolvedInSeparateScopesAsync<TNotification>(
+            TNotification notification,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
+        {
+            int count;
+
+            using (var countingScope = _provider.CreateScope())
+            {
+                var resolved = countingScope.ServiceProvider.GetServices<INotificationHandler<TNotification>>();
+                var handlers = resolved as INotificationHandler<TNotification>[] ?? resolved.ToArray();
+                count = handlers.Length;
+            }
+
+            if (count == 0)
+            {
+                _knownEmpty[typeof(TNotification)] = true;
+                return;
+            }
+
+            var tasks = new Task[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                tasks[i] = InvokeResolvedHandlerInOwnScopeAsync(i, notification, cancellationToken);
+            }
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+
+        private async Task InvokeResolvedHandlerInOwnScopeAsync<TNotification>(
+            int index,
+            TNotification notification,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
+        {
+            using var scope = _provider.CreateScope();
+
+            var resolved = scope.ServiceProvider.GetServices<INotificationHandler<TNotification>>();
+            var handlers = resolved as INotificationHandler<TNotification>[] ?? resolved.ToArray();
+
+            await handlers[index].Handle(notification, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Publishes a notification using <paramref name="provider"/>, which is the dispatch scope
+        /// when <see cref="RoutyaDispatchScope.Scoped"/> is configured.
+        /// </summary>
+        private Task PublishCoreAsync<TNotification>(
+            IServiceProvider provider,
+            TNotification notification,
+            NotificationDispatchStrategy strategy,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
+        {
+            var notificationType = typeof(TNotification);
+
+            // Registry backed handlers: wrappers are built once, and resolve per dispatch internally
+            // according to the lifetime recorded at registration time.
+            if (_cache.TryGetValue(notificationType, out var cachedWrappers))
+            {
+                return InvokeWrappers(cachedWrappers, provider, notification!, strategy, cancellationToken);
+            }
+
+            if (_requiresDynamicResolution.ContainsKey(notificationType))
+            {
+                return InvokeResolvedAsync(provider, notification, strategy, cancellationToken);
+            }
+
+            var handlerType = typeof(INotificationHandler<TNotification>);
+
+            if (_notificationHandlerRegistry.TryGetValue(handlerType, out var handlerInfos) && handlerInfos.Count > 0)
+            {
+                var wrappers = _cache.GetOrAdd(notificationType, _ => BuildRegistryWrappers<TNotification>(handlerInfos));
+                return InvokeWrappers(wrappers, provider, notification!, strategy, cancellationToken);
+            }
+
+            // Not described in the registry, so fall back to resolving the handler services. This is
+            // recorded so that later publishes skip the registry lookup, but the handlers themselves
+            // are deliberately never cached: they may be Scoped and must come from the dispatch scope.
+            _requiresDynamicResolution[notificationType] = true;
+            return InvokeResolvedAsync(provider, notification, strategy, cancellationToken);
+        }
+
+        private NotificationHandlerWrapper[] BuildRegistryWrappers<TNotification>(
+            List<Extensions.NotificationHandlerInfo> handlerInfos)
+            where TNotification : INotification
+        {
+            var wrappers = new NotificationHandlerWrapper[handlerInfos.Count];
+
+            for (int i = 0; i < handlerInfos.Count; i++)
+            {
+                var handlerInfo = handlerInfos[i];
+
+                // Singleton handlers live in the root provider, so the instance can be resolved once
+                if (handlerInfo.Lifetime == ServiceLifetime.Singleton)
+                {
+                    var singletonInstance = (INotificationHandler<TNotification>)_provider.GetRequiredService(handlerInfo.ConcreteType);
+                    wrappers[i] = new NotificationHandlerWrapper<TNotification>(
+                        singletonInstance,
+                        handlerInfo.Lifetime,
+                        handlerInfo.ConcreteType);
+                }
+                else
+                {
+                    // For Scoped/Transient, just store the type info
+                    wrappers[i] = new NotificationHandlerWrapper<TNotification>(
+                        null!,
+                        handlerInfo.Lifetime,
+                        handlerInfo.ConcreteType);
+                }
+            }
+
+            return wrappers;
+        }
+
+        private static Task InvokeWrappers(
+            NotificationHandlerWrapper[] handlers,
+            IServiceProvider provider,
+            object notification,
+            NotificationDispatchStrategy strategy,
+            CancellationToken cancellationToken)
+        {
+            if (handlers.Length == 0)
+                return Task.CompletedTask;
+
+            return strategy == NotificationDispatchStrategy.Sequential
+                ? InvokeSequential(handlers, provider, notification, cancellationToken)
+                : InvokeParallel(handlers, provider, notification, cancellationToken);
+        }
+
+        /// <summary>
+        /// Resolves handler services from the dispatch scope and invokes them. Used for handlers
+        /// registered directly against <c>IServiceCollection</c>, whose concrete types may not be
+        /// registered in DI and therefore cannot be resolved by concrete type.
+        /// </summary>
+        private Task InvokeResolvedAsync<TNotification>(
+            IServiceProvider provider,
+            TNotification notification,
+            NotificationDispatchStrategy strategy,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
+        {
+            var resolved = provider.GetServices<INotificationHandler<TNotification>>();
+            var handlers = resolved as INotificationHandler<TNotification>[] ?? resolved.ToArray();
+
+            if (handlers.Length == 0)
+            {
+                _knownEmpty[typeof(TNotification)] = true;
+                return Task.CompletedTask;
+            }
+
+            return strategy == NotificationDispatchStrategy.Sequential
+                ? InvokeSequentialDirect(handlers, notification, cancellationToken)
+                : InvokeParallelDirect(handlers, notification, cancellationToken);
+        }
+
+        private static async Task InvokeSequentialDirect<TNotification>(
+            INotificationHandler<TNotification>[] handlers,
+            TNotification notification,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
+        {
+            foreach (var handler in handlers)
+            {
+                await handler.Handle(notification, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private static Task InvokeParallelDirect<TNotification>(
+            INotificationHandler<TNotification>[] handlers,
+            TNotification notification,
+            CancellationToken cancellationToken)
+            where TNotification : INotification
+        {
+            if (handlers.Length == 1)
+            {
+                return handlers[0].Handle(notification, cancellationToken);
+            }
+
+            var tasks = new Task[handlers.Length];
+            for (int i = 0; i < handlers.Length; i++)
+            {
+                tasks[i] = handlers[i].Handle(notification, cancellationToken);
+            }
+
+            return Task.WhenAll(tasks);
         }
 
         private static async Task InvokeSequential(NotificationHandlerWrapper[] handlers, IServiceProvider provider, object notification, CancellationToken cancellationToken)
@@ -216,23 +425,6 @@ namespace Routya.Core.Dispatchers.Notifications
                 }
                 
                 return handler.Handle((TNotification)notification!, cancellationToken);
-            }
-        }
-        
-        // Wrapper for fallback handlers resolved via GetServices (already have instance)
-        private class NotificationHandlerWrapperWithInstance<TNotification> : NotificationHandlerWrapper
-            where TNotification : INotification
-        {
-            private readonly INotificationHandler<TNotification> _handler;
-
-            public NotificationHandlerWrapperWithInstance(INotificationHandler<TNotification> handler)
-            {
-                _handler = handler;
-            }
-
-            public override Task Handle(IServiceProvider provider, object notification, CancellationToken cancellationToken)
-            {
-                return _handler.Handle((TNotification)notification!, cancellationToken);
             }
         }
     }
