@@ -45,7 +45,7 @@ public class AllocationBudgetTests
 
         var bytes = AllocationProbe.PerOperation(() => routya.Send<AllocSyncPing, string>(request));
 
-        AssertWithinBudget(bytes, RootSingletonSendBudget, "Send with a Singleton handler");
+        AssertWithinBudget(bytes, RootSingletonSendBudget, "Send, Singleton handler, dispatch only");
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public class AllocationBudgetTests
         var bytes = AllocationProbe.PerOperation(
             () => routya.SendAsync<AllocPing, string>(request));
 
-        AssertWithinBudget(bytes, RootSingletonSendAsyncBudget, "SendAsync with a Singleton handler");
+        AssertWithinBudget(bytes, RootSingletonSendAsyncBudget, "SendAsync, Singleton handler, dispatch only");
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class AllocationBudgetTests
         var bytes = AllocationProbe.PerOperation(
             () => routya.PublishAsync(notification));
 
-        AssertWithinBudget(bytes, RootSingletonPublishBudget, "PublishAsync with two Singleton handlers");
+        AssertWithinBudget(bytes, RootSingletonPublishBudget, "PublishAsync, 2 Singleton handlers, dispatch only");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public class AllocationBudgetTests
         var bytes = AllocationProbe.PerOperation(
             () => routya.SendAsync<AllocPing, string>(request));
 
-        AssertWithinBudget(bytes, ScopedSendAsyncBudget, "SendAsync with a Scoped handler");
+        AssertWithinBudget(bytes, ScopedSendAsyncBudget, "SendAsync, Scoped handler, includes dispatch scope");
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class AllocationBudgetTests
         var bytes = AllocationProbe.PerOperation(
             () => routya.PublishAsync(notification));
 
-        AssertWithinBudget(bytes, ScopedPublishBudget, "PublishAsync with two Scoped handlers");
+        AssertWithinBudget(bytes, ScopedPublishBudget, "PublishAsync, 2 Scoped handlers, includes dispatch scope");
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class AllocationBudgetTests
         var bytes = AllocationProbe.PerOperation(
             () => routya.PublishParallelAsync(notification));
 
-        AssertWithinBudget(bytes, ScopedParallelPublishBudget, "PublishParallelAsync with two Scoped handlers");
+        AssertWithinBudget(bytes, ScopedParallelPublishBudget, "PublishParallelAsync, 2 Scoped handlers, scope per handler");
     }
 
     private void AssertWithinBudget(long measured, long budget, string what)

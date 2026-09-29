@@ -297,7 +297,10 @@ the concrete type and lifetime up front, which lets Routya resolve the handler d
 
 ### 📊 Allocation per dispatch
 
-Compared against MediatR 12.5.0 with simple request handlers.
+Compared against MediatR 12.5.0 with simple request handlers. Each figure is the **full cost of
+serving one request**: creating the DI scope, resolving the dispatcher, running two pipeline
+behaviours, and invoking the handler. Both libraries are measured the same way, so the comparison is
+like for like.
 
 | Configuration | Allocated | vs MediatR |
 |---|---:|---:|
@@ -310,11 +313,16 @@ Compared against MediatR 12.5.0 with simple request handlers.
 | Routya `SendAsync`, Scoped handler | 1136 B | 12% more |
 
 > **Why allocations and not timings.** Allocated bytes are deterministic: they do not depend on CPU,
-> machine load or GC mode, so these figures hold on your hardware as well as ours, and they are
-> asserted on every build by the allocation budget tests. Timings are not published here because
-> they are not reproducible. On our own measurements the MediatR baseline, running unchanged code,
-> drifted by a third between runs. If you need timings for your hardware, run
-> [Routya.Benchmark](./Routya.Benchmark) on a quiet machine.
+> machine load or GC mode. Every figure above was measured independently on a developer machine and
+> on a CI runner, on different hardware and operating systems, and came out identical to the byte.
+> Timings are not published here because they are not reproducible: the MediatR baseline, running
+> unchanged code, has been observed drifting by a third between two runs on the same machine. If you
+> need timings for your hardware, run [Routya.Benchmark](./Routya.Benchmark) on a quiet machine.
+>
+> **These are not the same figures the CI job summary reports.** The allocation budget tests measure
+> dispatch on its own, with the dispatcher already resolved and no behaviours, which is the right
+> unit for catching a regression. The table above is the whole per request cost, which is the right
+> unit for comparing libraries. A `Singleton Send` is 104 B of dispatch inside 808 B of total work.
 >
 > Pipeline behaviors registered as `Scoped` are constructed once per dispatch scope, which costs a
 > further 272 B per dispatch over `Singleton` behaviors. Register behaviors as `Singleton` where
