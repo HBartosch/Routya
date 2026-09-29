@@ -38,7 +38,7 @@ public class GeneratedAllocationBudgetTests
         var bytes = GeneratedAllocationProbe.PerOperation(
             () => routya.SendAsync(request));
 
-        AssertWithinBudget(bytes, SendAsyncBudget, "Generated SendAsync");
+        AssertWithinBudget(bytes, SendAsyncBudget, "Generated SendAsync, dispatch only");
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class GeneratedAllocationBudgetTests
 
         var bytes = GeneratedAllocationProbe.PerOperation(() => routya.Send(request));
 
-        AssertWithinBudget(bytes, SendBudget, "Generated Send");
+        AssertWithinBudget(bytes, SendBudget, "Generated Send, dispatch only");
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class GeneratedAllocationBudgetTests
         var bytes = GeneratedAllocationProbe.PerOperation(
             () => routya.PublishAsync(notification));
 
-        AssertWithinBudget(bytes, PublishAsyncBudget, "Generated PublishAsync with two handlers");
+        AssertWithinBudget(bytes, PublishAsyncBudget, "Generated PublishAsync, 2 handlers, dispatch only");
     }
 
     private void AssertWithinBudget(long measured, long budget, string what)
