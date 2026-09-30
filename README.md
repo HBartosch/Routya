@@ -707,6 +707,11 @@ public class CountingBehavior<TRequest, TResponse> : IStreamPipelineBehavior<TRe
 }
 ```
 
+> **Run it.** [`Routya.SourceGen.Demo`](./Routya.SourceGen.Demo) streams 500 records in five
+> chunks through exactly this arrangement. Its output interleaves the handler producing a
+> chunk, the behavior observing it, and the consumer receiving it, with elapsed timings, which
+> is the difference from a request behavior made visible.
+
 ### Scope lifetime
 
 Under `RoutyaDispatchScope.Scoped`, the dispatch scope lives for the **whole enumeration** and is
@@ -829,7 +834,7 @@ Smaller, single file examples. Each one runs with `dotnet run` from its own dire
 
 | Project | Target | Demonstrates |
 |---|---|---|
-| [`Routya.SourceGen.Demo`](./Routya.SourceGen.Demo) | net10.0 | Request/response and notification dispatch, an open-generic `LoggingPipelineBehavior<TRequest, TResponse>`, and streaming |
+| [`Routya.SourceGen.Demo`](./Routya.SourceGen.Demo) | net10.0 | Request/response and notification dispatch, an open-generic `LoggingPipelineBehavior<TRequest, TResponse>`, and `IStreamRequest<T>` streaming wrapped in a `StreamLoggingBehavior<TRequest, TResponse>`. Its output interleaves production, the behavior observing each item, and consumption, which is the clearest demonstration of why stream behaviors differ from request behaviors |
 | [`Routya.SourceGen.DatabaseDemo`](./Routya.SourceGen.DatabaseDemo) | net8.0 | Commands and queries against an in-memory SQLite database, with a notification raised after each write |
 
 ### Runtime dispatch path
@@ -840,8 +845,3 @@ Smaller, single file examples. Each one runs with `dotnet run` from its own dire
 | [`Routya.Demo.Console`](./Routya.Demo.Console) | net8.0 | The smallest complete example: assembly scanning, scoped dispatch, synchronous and asynchronous sends |
 | [`Routya.Notification.Demo`](./Routya.Notification.Demo) | net8.0 | `PublishAsync` and `PublishParallelAsync` side by side, so the sequential and parallel fan-out strategies can be compared |
 | [`Routya.Demo.NetFramework`](./Routya.Demo.NetFramework) | .NET Framework 4.8 | That `Routya.Core` runs on the full .NET Framework, not only on modern .NET |
-
-> **Note on `Routya.SourceGen.Demo`.** Its streaming example predates 4.0.0 and still uses the older
-> `IRequest<IAsyncEnumerable<T>>` shape rather than the first-class `IStreamRequest<T>` and
-> `CreateStream` API. Both Web API demos above use the current API, so prefer those as the streaming
-> reference.

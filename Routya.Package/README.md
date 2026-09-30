@@ -88,7 +88,7 @@ See working demos in the [GitHub repository](https://github.com/HBartosch/Routya
 |---|---|
 | [Routya.WebApi.SourceGen.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.WebApi.SourceGen.Demo) | ASP.NET Core minimal API — CRUD, pipeline behaviors, notification fan-out, `IAsyncEnumerable<T>` streaming |
 | [Routya.WebApi.SourceGen.Demo.Application](https://github.com/HBartosch/Routya/tree/main/Routya.WebApi.SourceGen.Demo.Application) | The class library holding the handlers for the API above. Shows referenced assembly discovery and `[RoutyaHandler]` lifetime overrides |
-| [Routya.SourceGen.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.SourceGen.Demo) | Console app — request/response and notifications, an open-generic logging pipeline behavior, and streaming |
+| [Routya.SourceGen.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.SourceGen.Demo) | Console app — request/response and notifications, an open-generic request pipeline behavior, and `IStreamRequest<T>` streaming wrapped in a stream pipeline behavior |
 | [Routya.SourceGen.DatabaseDemo](https://github.com/HBartosch/Routya/tree/main/Routya.SourceGen.DatabaseDemo) | Console app — commands and queries against an in-memory SQLite database, with notifications on write |
 
 **Runtime dispatch path** (`IRoutya`)

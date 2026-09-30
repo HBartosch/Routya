@@ -85,6 +85,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
   10.0.0 to 10.0.12 clears GHSA-v5pm-xwqc-g5wc, `Microsoft.Data.Sqlite` 8.0.0 to 8.0.31 clears
   GHSA-2m69-gcr7-jv3q, and `xunit` 2.5.3 to 2.9.3 clears GHSA-7jgj-8wvc-jh57 and
   GHSA-cmhx-cq75-c4mj. No consumer facing change.
+- **`Routya.SourceGen.Demo` now demonstrates the current streaming API.** Its streaming example
+  predated 4.0.0 and still used `IRequest<IAsyncEnumerable<T>>`, so the demo most people run
+  first taught the shape 4.0.0 replaced. It now uses `IStreamRequest<T>`, `IStreamRequestHandler`
+  and `CreateStream`, wrapped in a `StreamLoggingBehavior<TRequest, TResponse>` that logs each
+  item with elapsed timings, so the output shows a stream behavior observing items as they are
+  produced rather than after the fact.
 
 ### Upgrade notes
 

@@ -278,7 +278,7 @@ either `Transient` or a scope you create yourself.
 
 | Project | Description |
 |---|---|
-| [Routya.SourceGen.Demo](../Routya.SourceGen.Demo) | Console app — request/response and notification dispatch, a generic logging pipeline behavior, and streaming |
+| [Routya.SourceGen.Demo](../Routya.SourceGen.Demo) | Console app — request/response and notification dispatch, an open-generic request pipeline behavior, and `IStreamRequest<T>` streaming wrapped in a stream pipeline behavior that observes every item |
 | [Routya.SourceGen.DatabaseDemo](../Routya.SourceGen.DatabaseDemo) | Console app — commands and queries against an in-memory SQLite database, with notifications raised on write |
 | [Routya.WebApi.SourceGen.Demo](../Routya.WebApi.SourceGen.Demo) | ASP.NET Core minimal API — CRUD endpoints, open-generic pipeline behavior, notification fan-out, and `IAsyncEnumerable<T>` streaming |
 | [Routya.WebApi.SourceGen.Demo.Application](../Routya.WebApi.SourceGen.Demo.Application) | Class library holding the handlers for the API above. It deliberately does **not** reference the generator, so it demonstrates both referenced assembly discovery and `[RoutyaHandler]` lifetime overrides |
