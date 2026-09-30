@@ -34,6 +34,7 @@ namespace Routya.SourceGenerators.Emitters
             sb.AppendLine("    /// Type-specific dispatcher interface generated at compile-time.");
             sb.AppendLine("    /// Use this interface for dependency injection to get concrete type-specific dispatch without generic fallbacks.");
             sb.AppendLine("    /// </summary>");
+            GeneratedTypeAttributes.AppendForInterface(sb, "    ");
             sb.AppendLine("    public interface IGeneratedRoutya");
             sb.AppendLine("    {");
             
@@ -87,6 +88,7 @@ namespace Routya.SourceGenerators.Emitters
             sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// Auto-generated handler registration extensions for Routya.");
             sb.AppendLine("    /// </summary>");
+            GeneratedTypeAttributes.AppendForType(sb, "    ");
             sb.AppendLine("    public static class RoutyaGeneratedExtensions");
             sb.AppendLine("    {");
             sb.AppendLine("        /// <summary>");

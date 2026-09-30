@@ -33,6 +33,7 @@ internal static class DispatcherEmitter
         sb.AppendLine("    /// High-performance, compile-time optimized dispatcher.");
         sb.AppendLine("    /// Generated methods provide zero-overhead, type-specific dispatch.");
         sb.AppendLine("    /// </summary>");
+        GeneratedTypeAttributes.AppendForType(sb, "    ");
         sb.AppendLine("    public sealed class GeneratedRoutya : IGeneratedRoutya");
         sb.AppendLine("    {");
         sb.AppendLine("        private readonly IServiceProvider _serviceProvider;");
