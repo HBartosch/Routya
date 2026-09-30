@@ -545,6 +545,34 @@ depend on a scoped service such as a `DbContext`.
 | `AddRoutya` (runtime) | `Scoped` | `cfg => cfg.HandlerLifetime = ...`, or per handler via `AddRoutya*Handler` |
 | `AddGeneratedRoutya` | `Transient` | `AddGeneratedRoutya(lifetime)`, or per handler via `[RoutyaHandler]` |
 
+### Why the defaults differ
+
+Not an oversight. **The runtime dispatcher creates a DI scope per dispatch; the generated one does
+not.** `IRoutya` can therefore resolve a `Scoped` handler no matter where it was itself resolved
+from, because it makes its own scope. `IGeneratedRoutya` uses whatever provider it was given, so a
+`Scoped` handler only works if you resolved `IGeneratedRoutya` from inside a scope.
+
+`Transient` is the default for the generated path because it is the only lifetime that works
+wherever you resolve from.
+
+**In ASP.NET Core this is a non-issue**: controllers, minimal API endpoints and anything injected
+into them resolve from the request scope, so `AddGeneratedRoutya(ServiceLifetime.Scoped)` is safe
+and gives you one handler per request.
+
+**Be careful when dispatching outside a request**, for example from a singleton service, an
+`IHostedService` that does not create its own scope, or a console application. There, a `Scoped`
+handler throws `InvalidOperationException`. Either keep `Transient`, or create a scope yourself:
+
+```C#
+using var scope = serviceProvider.CreateScope();
+var routya = scope.ServiceProvider.GetRequiredService<IGeneratedRoutya>();
+await routya.SendAsync(new DoWork());
+```
+
+A `[RoutyaHandler(ServiceLifetime.Singleton)]` handler must additionally not depend on any `Scoped`
+service, such as a `DbContext`. That is a captive dependency, and scope validation catches it in
+Development but not necessarily in Production.
+
 ---
 
 ## 🌊 Streaming

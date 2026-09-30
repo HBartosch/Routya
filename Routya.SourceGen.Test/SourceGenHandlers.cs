@@ -178,3 +178,35 @@ public class PinnedSingletonHandler : IAsyncRequestHandler<PinnedSingletonReques
     public Task<Guid> HandleAsync(PinnedSingletonRequest request, CancellationToken cancellationToken)
         => Task.FromResult(_instanceId);
 }
+
+// ── Lifetime attribute probes ───────────────────────────────────────────────
+
+public class ScopedDependency
+{
+    public Guid Id { get; } = Guid.NewGuid();
+}
+
+public record PinnedScopedRequest : IRequest<Guid>;
+
+[RoutyaHandler(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
+public class PinnedScopedHandler : IAsyncRequestHandler<PinnedScopedRequest, Guid>
+{
+    private readonly Guid _instanceId = Guid.NewGuid();
+
+    public Task<Guid> HandleAsync(PinnedScopedRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_instanceId);
+}
+
+public record SingletonWithScopedDepRequest : IRequest<Guid>;
+
+// Singleton handler that depends on a Scoped service: a captive dependency.
+[RoutyaHandler(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
+public class SingletonWithScopedDepHandler : IAsyncRequestHandler<SingletonWithScopedDepRequest, Guid>
+{
+    private readonly ScopedDependency _dependency;
+
+    public SingletonWithScopedDepHandler(ScopedDependency dependency) => _dependency = dependency;
+
+    public Task<Guid> HandleAsync(SingletonWithScopedDepRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_dependency.Id);
+}

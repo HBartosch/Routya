@@ -25,11 +25,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
   individual handler. The generator previously hardcoded `Transient` with no way to change it, which
   a project migrating from runtime dispatch had to simply accept.
 
-  The default stays `Transient`, so no existing generated registration changes on upgrade. Note that
-  the runtime `AddRoutya` defaults to `Scoped`, so **the two paths disagree**, and moving from one to
-  the other changes handler lifetime unless a lifetime is passed. That difference existed before and
-  was undocumented; it is now stated in the README, on the attribute, and in the generated method's
-  own documentation comment.
+  The default stays `Transient`. That is not merely for compatibility: the runtime dispatcher creates
+  a DI scope per dispatch while the generated one does not, so `IRoutya` can resolve a `Scoped`
+  handler wherever it was itself resolved from, and `IGeneratedRoutya` cannot. `Transient` is the
+  only lifetime that works regardless of where the consumer resolves from, which is why the two
+  paths default differently. Previously undocumented; now explained in the README, on the attribute,
+  and in the generated method's own documentation comment, with guidance on when
+  `AddGeneratedRoutya(ServiceLifetime.Scoped)` is safe and when it is not.
 - `ROUTYA006` warning when a handler in a referenced assembly is not public. Generated registration
   code lives in the consuming assembly, so such a handler is genuinely unreachable from it. It is
   skipped with a diagnostic naming the handler and the assembly, rather than going silently missing

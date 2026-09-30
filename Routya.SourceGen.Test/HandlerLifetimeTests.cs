@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Routya.Core.Abstractions;
 using Routya.Generated;
 
@@ -93,6 +93,52 @@ public class HandlerLifetimeTests
 
             Assert.NotEqual(Guid.Empty, id);
         }
+    }
+
+    [Fact]
+    public void An_Attributed_Scoped_Handler_Resolves_From_A_Scope()
+    {
+        var provider = BuildWithScopedDep();
+
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<PinnedScopedHandler>());
+    }
+
+    [Fact]
+    public void An_Attributed_Scoped_Handler_Cannot_Be_Resolved_From_The_Root_Provider()
+    {
+        // Not a Routya limitation: a Scoped service cannot be resolved from the root provider under
+        // scope validation, which is the ASP.NET Core Development default. It matters here because
+        // the generated dispatcher does not create a scope of its own, unlike the runtime one, so
+        // "am I in a scope" is decided by wherever the consumer resolved IGeneratedRoutya.
+        var provider = BuildWithScopedDep();
+
+        Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredService<PinnedScopedHandler>());
+    }
+
+    [Fact]
+    public void An_Attributed_Singleton_Handler_Cannot_Depend_On_A_Scoped_Service()
+    {
+        // A captive dependency. Scope validation catches it, which is on by default in the
+        // ASP.NET Core Development environment but not necessarily in Production, so the attribute
+        // documentation warns about it rather than relying on this being caught.
+        var provider = BuildWithScopedDep();
+
+        using var scope = provider.CreateScope();
+
+        Assert.Throws<InvalidOperationException>(
+            () => scope.ServiceProvider.GetRequiredService<SingletonWithScopedDepHandler>());
+    }
+
+    private static ServiceProvider BuildWithScopedDep()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new HandlerCallTracker());
+        services.AddScoped<ScopedDependency>();
+        services.AddGeneratedRoutya();
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
     private static ServiceProvider BuildProvider(ServiceLifetime? lifetime = null)
