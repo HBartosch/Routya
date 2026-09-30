@@ -10,7 +10,7 @@
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\Generated</CompilerGeneratedFilesOutputPath>
     <!-- Default for local dev; CI overrides via /p:RoutyaVersion=<tag> -->
-    <RoutyaVersion>3.1.0</RoutyaVersion>
+    <RoutyaVersion>4.1.0</RoutyaVersion>
   </PropertyGroup>
 
   <ItemGroup>

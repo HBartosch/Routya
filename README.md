@@ -16,7 +16,7 @@ It provides a flexible way to route requests/responses and notifications to thei
 Get **compile-time code generation** with no reflection on the dispatch path:
 
 ```bash
-dotnet add package Routya.SourceGenerators --version 4.0.0
+dotnet add package Routya.SourceGenerators --version 4.1.0
 ```
 
 ```csharp
@@ -68,22 +68,35 @@ public class MyController : ControllerBase
 
 ### Source Generator (recommended for new projects)
 ```bash
-dotnet add package Routya.SourceGenerators --version 4.0.0
+dotnet add package Routya.SourceGenerators --version 4.1.0
 ```
 Includes `Routya.Core` automatically. Compile time dispatch, no reflection, and the only option that
 is verified under trimming and Native AOT.
 
 ### Runtime Dispatcher
 ```bash
-dotnet add package Routya.Core --version 4.0.0
+dotnet add package Routya.Core --version 4.1.0
 ```
 Use for existing projects or when runtime flexibility is needed.
 
 ### Everything in one package
 ```bash
-dotnet add package Routya --version 4.0.0
+dotnet add package Routya --version 4.1.0
 ```
 Pulls in both `Routya.Core` and `Routya.SourceGenerators`.
+
+### ⚠️ Behaviour change in v4.1.0
+
+**The generator now emits a dispatcher only into the project that calls `AddGeneratedRoutya`.**
+If your composition root already calls it, nothing changes, and it now also covers handlers in
+referenced assemblies.
+
+One shape breaks: a project that used `IGeneratedRoutya` but did not call `AddGeneratedRoutya` in
+that same project previously got a dispatcher anyway and now gets nothing, so those injection sites
+stop compiling. That shape was already producing `CS0436` conflicts and could bind to a dispatcher
+other than the one registered at startup. Either resolve `IGeneratedRoutya` from the project that
+composes the container, or set `<RoutyaGenerateDispatcher>true</RoutyaGenerateDispatcher>` to keep
+generating locally. See [Which project generates the dispatcher](#-which-project-generates-the-dispatcher).
 
 ### ⚠️ Breaking Changes in v4.0.0
 

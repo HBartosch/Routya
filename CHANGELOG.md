@@ -8,6 +8,17 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [4.1.0] — 2026-09-30
+
+> Multiple project solutions now work with the source generator, and only the project
+> that composes the container generates a dispatcher.
+
+> One behavioural change. A project that generated a dispatcher without calling
+> `AddGeneratedRoutya` no longer does. Read **Upgrade notes** if that describes
+> any of your projects.
+
 ### Added
 
 - **The source generator now finds handlers in referenced assemblies.** It previously only saw
@@ -45,7 +56,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - `ROUTYA008` and `ROUTYA009` diagnostics covering which project owns the generated dispatcher, and
   the `RoutyaGenerateDispatcher` MSBuild property to override that decision. See **Fixed** below.
 
-### Fixed
+### Changed
 
 - **Every project that referenced the generator emitted its own dispatcher, and they conflicted.**
   `Routya.Generated` is a fixed, public namespace, so two assemblies in one reference chain cannot
@@ -66,6 +77,34 @@ Versions follow [Semantic Versioning](https://semver.org/).
   or by reflection, set `<RoutyaGenerateDispatcher>true</RoutyaGenerateDispatcher>`. Setting it to
   `false` suppresses generation outright, which is how a project that genuinely composes its own
   container while referencing one that also does resolves the `ROUTYA009` warning.
+
+### Fixed
+
+- Three known vulnerabilities in the repository's own package graph, all in transitive dependencies
+  of demo and test projects rather than in anything Routya ships. `Microsoft.AspNetCore.OpenApi`
+  10.0.0 to 10.0.12 clears GHSA-v5pm-xwqc-g5wc, `Microsoft.Data.Sqlite` 8.0.0 to 8.0.31 clears
+  GHSA-2m69-gcr7-jv3q, and `xunit` 2.5.3 to 2.9.3 clears GHSA-7jgj-8wvc-jh57 and
+  GHSA-cmhx-cq75-c4mj. No consumer facing change.
+
+### Upgrade notes
+
+Most projects need no change. If your composition root already calls `AddGeneratedRoutya`, it keeps
+generating exactly as before, and it now also covers handlers in referenced assemblies.
+
+One shape breaks. A project that used `IGeneratedRoutya` but did **not** call `AddGeneratedRoutya`
+in that same project previously got a generated dispatcher anyway, and now gets nothing, so those
+injection sites stop compiling. That shape was already producing `CS0436` conflicts and could bind
+to a dispatcher other than the one registered at startup, so it was not working correctly before.
+
+Two ways forward, depending on which is true of your project:
+
+| Situation | What to do |
+|---|---|
+| The project should use another project's dispatcher | Remove the reference to the generator, or set `<RoutyaGenerateDispatcher>false</RoutyaGenerateDispatcher>`, and resolve `IGeneratedRoutya` from the assembly that composes the container |
+| The project genuinely needs its own, but registers through a helper elsewhere or by reflection | Set `<RoutyaGenerateDispatcher>true</RoutyaGenerateDispatcher>` |
+
+`ROUTYA008` names the affected project at Info severity, so raising the generator's diagnostic level
+will list them if you are unsure which projects are affected.
 
 ---
 
@@ -368,7 +407,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/HBartosch/Routya/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/HBartosch/Routya/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/HBartosch/Routya/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/HBartosch/Routya/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/HBartosch/Routya/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/HBartosch/Routya/compare/v3.0.0...v3.0.1

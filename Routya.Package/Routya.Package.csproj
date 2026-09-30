@@ -5,7 +5,7 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>Routya</PackageId>
-    <Version>4.0.0</Version>
+    <Version>4.1.0</Version>
     <Title>Routya</Title>
     <Authors>Henry Bartosch</Authors>
     <Copyright>Copyright (c) Henry Bartosch</Copyright>
