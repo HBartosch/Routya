@@ -151,6 +151,83 @@ namespace Api
     }
 
     [Fact]
+    public void Nothing_Is_Generated_When_A_Referenced_Assembly_Already_Provides_The_Dispatcher()
+    {
+        // The test project shape: it references the application project, declares no handlers of
+        // its own, and never calls AddGeneratedRoutya. Generating a second dispatcher here puts a
+        // duplicate Routya.Generated.IGeneratedRoutya in scope, produces CS0436 conflicts, and lets
+        // a test silently bind to its own copy rather than the one the application uses.
+        var alreadyGenerated = @"
+using Routya.Core.Abstractions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Routya.Generated
+{
+    // Stands in for an upstream project that has already run the generator
+    public interface IGeneratedRoutya { }
+}
+
+namespace Application.Users
+{
+    public class GetUser : IRequest<string> { }
+
+    public class GetUserHandler : IAsyncRequestHandler<GetUser, string>
+    {
+        public Task<string> HandleAsync(GetUser request, CancellationToken cancellationToken)
+            => Task.FromResult(""user"");
+    }
+}";
+
+        var result = GeneratorHarness.RunWithReferencedAssembly(alreadyGenerated, @"
+namespace Tests
+{
+    public class TestMarker { }
+}");
+
+        result.AssertCompiles();
+
+        Assert.Empty(result.GeneratedSources);
+        Assert.Contains(result.GeneratorDiagnostics, d => d.Id == "ROUTYA007");
+    }
+
+    [Fact]
+    public void Generation_Still_Happens_When_The_Project_Has_Handlers_Of_Its_Own()
+    {
+        // Guards the skip from being too eager: a project that adds handlers still needs a
+        // dispatcher even if something upstream already generated one.
+        var alreadyGenerated = @"
+namespace Routya.Generated
+{
+    public interface IGeneratedRoutya { }
+}
+
+namespace Upstream
+{
+    public class Marker { }
+}";
+
+        var result = GeneratorHarness.RunWithReferencedAssembly(alreadyGenerated, @"
+using Routya.Core.Abstractions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Api
+{
+    public class Ping : IRequest<string> { }
+
+    public class PingHandler : IAsyncRequestHandler<Ping, string>
+    {
+        public Task<string> HandleAsync(Ping request, CancellationToken cancellationToken)
+            => Task.FromResult(""pong"");
+    }
+}");
+
+        Assert.NotEmpty(result.GeneratedSources);
+        Assert.Contains("PingHandler", result.AllGeneratedSource);
+    }
+
+    [Fact]
     public void An_Assembly_With_No_Routya_Handlers_Contributes_Nothing()
     {
         // Guards against scanning every referenced assembly and picking up unrelated types.

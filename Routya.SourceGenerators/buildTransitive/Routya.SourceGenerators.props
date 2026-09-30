@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Makes RoutyaGenerateDispatcher readable by the source generator.
+
+    The generator normally decides for itself: it emits a dispatcher into the project that calls
+    AddGeneratedRoutya, and nowhere else, because Routya.Generated is a fixed public namespace and
+    two assemblies in one reference chain cannot both define it.
+
+    Set this property only to override that decision:
+      true   generate here even though AddGeneratedRoutya is not called in this project
+      false  never generate here
+  -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="RoutyaGenerateDispatcher" />
+  </ItemGroup>
+
+</Project>

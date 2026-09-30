@@ -2,6 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Routya.SourceGenerators.Emitters;
 using Routya.SourceGenerators.Models;
 using System.Collections.Generic;
@@ -23,6 +24,25 @@ namespace Routya.SourceGenerators.Generators
         private const string IStreamRequestHandlerName = "Routya.Core.Abstractions.IStreamRequestHandler";
         private const string RoutyaCoreAssemblyName = "Routya.Core";
         private const string RoutyaHandlerAttributeName = "RoutyaHandlerAttribute";
+        private const string GeneratedDispatcherInterfaceName = "Routya.Generated.IGeneratedRoutya";
+
+        private const string RegistrationMethodName = "AddGeneratedRoutya";
+        private const string GenerateDispatcherProperty = "build_property.RoutyaGenerateDispatcher";
+
+        /// <summary>
+        /// Whether this compilation wants a generated dispatcher.
+        /// </summary>
+        private enum DispatcherGeneration
+        {
+            /// <summary>Decide from whether the compilation calls AddGeneratedRoutya.</summary>
+            Auto,
+
+            /// <summary>RoutyaGenerateDispatcher=true. Generate regardless.</summary>
+            ForcedOn,
+
+            /// <summary>RoutyaGenerateDispatcher=false. Never generate.</summary>
+            ForcedOff,
+        }
 
         private static bool IsRequestHandler(INamedTypeSymbol iface)
             => iface.IsRoutyaInterface("IRequestHandler", arity: 2);
@@ -46,12 +66,89 @@ namespace Routya.SourceGenerators.Generators
                 .Where(static m => m is not null)
                 .Collect();
 
-            // Combine with compilation
-            var compilationAndHandlers = context.CompilationProvider.Combine(handlerDeclarations);
+            // Routya.Generated is a fixed, public namespace, so only one assembly in a reference
+            // chain may emit it. The assembly that calls AddGeneratedRoutya is the composition
+            // root, and is the one that should own it. Detection is purely syntactic, which is
+            // what makes it self consistent: the method being called is itself generated, so it
+            // cannot be bound before the decision to generate has been taken.
+            var registrationRequested = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    predicate: static (node, _) => IsRegistrationInvocation(node),
+                    transform: static (_, _) => true)
+                .Collect()
+                .Select(static (calls, _) => !calls.IsDefaultOrEmpty);
+
+            var generationMode = context.AnalyzerConfigOptionsProvider
+                .Select(static (options, _) => ReadGenerationMode(options));
+
+            var inputs = context.CompilationProvider
+                .Combine(handlerDeclarations)
+                .Combine(registrationRequested)
+                .Combine(generationMode);
 
             // Generate the registration code
-            context.RegisterSourceOutput(compilationAndHandlers, 
-                static (spc, source) => Execute(source.Left, source.Right!, spc));
+            context.RegisterSourceOutput(inputs, static (spc, source) => Execute(
+                source.Left.Left.Left,
+                source.Left.Left.Right!,
+                source.Left.Right,
+                source.Right,
+                spc));
+        }
+
+        /// <summary>
+        /// Recognises a call to AddGeneratedRoutya without binding it.
+        /// </summary>
+        private static bool IsRegistrationInvocation(SyntaxNode node)
+        {
+            if (!(node is InvocationExpressionSyntax invocation))
+                return false;
+
+            return GetInvokedName(invocation.Expression) == RegistrationMethodName;
+        }
+
+        private static string? GetInvokedName(ExpressionSyntax expression)
+        {
+            switch (expression)
+            {
+                // services.AddGeneratedRoutya()
+                case MemberAccessExpressionSyntax member:
+                    return member.Name.Identifier.ValueText;
+
+                // AddGeneratedRoutya(services), or a static using
+                case IdentifierNameSyntax identifier:
+                    return identifier.Identifier.ValueText;
+
+                // services?.AddGeneratedRoutya()
+                case MemberBindingExpressionSyntax binding:
+                    return binding.Name.Identifier.ValueText;
+
+                // AddGeneratedRoutya<T>() or services.AddGeneratedRoutya<T>()
+                case GenericNameSyntax generic:
+                    return generic.Identifier.ValueText;
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Reads the RoutyaGenerateDispatcher MSBuild property, which overrides call detection in
+        /// either direction.
+        /// </summary>
+        private static DispatcherGeneration ReadGenerationMode(AnalyzerConfigOptionsProvider options)
+        {
+            if (!options.GlobalOptions.TryGetValue(GenerateDispatcherProperty, out var value)
+                || string.IsNullOrWhiteSpace(value))
+            {
+                return DispatcherGeneration.Auto;
+            }
+
+            // An unparseable value falls back to Auto rather than failing the build. A typo should
+            // not silently switch generation off and take every dispatch site down with it.
+            if (bool.TryParse(value.Trim(), out var requested))
+                return requested ? DispatcherGeneration.ForcedOn : DispatcherGeneration.ForcedOff;
+
+            return DispatcherGeneration.Auto;
         }
 
         private static bool IsPotentialHandlerClass(SyntaxNode node)
@@ -92,18 +189,46 @@ namespace Routya.SourceGenerators.Generators
         private static void Execute(
             Compilation compilation,
             ImmutableArray<INamedTypeSymbol?> handlers,
+            bool registrationRequested,
+            DispatcherGeneration generationMode,
             SourceProductionContext context)
         {
-            // Deliberately no early return on an empty local handler set. A thin API project that
-            // holds no handlers of its own but references an Application project that does is the
-            // normal Clean Architecture layout, and returning here would generate nothing for it.
+            var localHandlers = handlers.Where(h => h is not null).ToList();
+
+            if (!ShouldGenerate(registrationRequested, generationMode, localHandlers.Count, context))
+                return;
+
+            // Two assemblies in one reference chain cannot both own Routya.Generated. When an
+            // upstream assembly already has it, generating here puts a duplicate type in scope and
+            // produces CS0436, so this project hands over to the upstream one unless it has
+            // handlers of its own that the upstream copy could not possibly know about.
+            var providingAssembly = FindAssemblyProvidingDispatcher(compilation);
+
+            if (providingAssembly != null)
+            {
+                if (localHandlers.Count == 0)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.DispatcherAlreadyProvided,
+                        Location.None,
+                        providingAssembly));
+
+                    return;
+                }
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.DuplicateDispatcher,
+                    Location.None,
+                    providingAssembly,
+                    compilation.AssemblyName ?? "this assembly"));
+            }
+
             var requestHandlers = new List<HandlerDescriptor>();
             var notificationHandlers = new List<HandlerDescriptor>();
 
             // Handlers declared in this compilation come from the syntax provider. Handlers in
             // referenced assemblies have no syntax tree here, so they have to be read from metadata.
-            var allHandlers = handlers
-                .Where(h => h is not null)
+            var allHandlers = localHandlers
                 .Concat(GetHandlersFromReferencedAssemblies(compilation, context))
                 .ToList();
 
@@ -265,6 +390,63 @@ namespace Routya.SourceGenerators.Generators
                 HasExplicitLifetime = DetectExplicitLifetime(handler).HasValue,
                 HandlerInterfaceName = INotificationHandlerName
             };
+        }
+
+        /// <summary>
+        /// Decides whether this compilation should own the generated dispatcher.
+        /// </summary>
+        /// <remarks>
+        /// Before this gate existed the generator emitted a dispatcher into every project that
+        /// referenced it and declared a handler. In a layered solution that meant the application
+        /// project, the API project and the test project each emitted their own
+        /// <c>Routya.Generated.IGeneratedRoutya</c>, which collide as CS0436 and let a caller bind
+        /// to a copy other than the one the application registers at startup.
+        /// </remarks>
+        private static bool ShouldGenerate(
+            bool registrationRequested,
+            DispatcherGeneration generationMode,
+            int localHandlerCount,
+            SourceProductionContext context)
+        {
+            if (generationMode == DispatcherGeneration.ForcedOff)
+                return false;
+
+            if (generationMode == DispatcherGeneration.ForcedOn || registrationRequested)
+                return true;
+
+            // A library project full of handlers that never composes a container is the normal
+            // Clean Architecture shape, so this is reported at Info: it is an explanation for
+            // anyone who goes looking, not a problem with their code.
+            if (localHandlerCount > 0)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.DispatcherNotRequested,
+                    Location.None,
+                    localHandlerCount));
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Returns the name of a referenced assembly that already contains a generated Routya
+        /// dispatcher, or null if none does.
+        /// </summary>
+        private static string? FindAssemblyProvidingDispatcher(Compilation compilation)
+        {
+            foreach (var reference in compilation.References)
+            {
+                if (!(compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly))
+                    continue;
+
+                if (!ReferencesRoutyaCore(assembly))
+                    continue;
+
+                if (assembly.GetTypeByMetadataName(GeneratedDispatcherInterfaceName) != null)
+                    return assembly.Name;
+            }
+
+            return null;
         }
 
         /// <summary>

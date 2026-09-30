@@ -2,6 +2,7 @@
 using System.IO;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Routya.SourceGenerators.Generators;
 
 namespace Routya.SourceGenerators.Test;
@@ -28,7 +29,10 @@ public static class GeneratorHarness
     /// in another assembly and has no syntax tree in the compilation being generated for. A single
     /// source string cannot reproduce that, because everything shares one compilation.
     /// </remarks>
-    public static GeneratorRunResult RunWithReferencedAssembly(string referencedSource, string source)
+    public static GeneratorRunResult RunWithReferencedAssembly(
+        string referencedSource,
+        string source,
+        bool? generateDispatcher = true)
     {
         var referencedCompilation = CSharpCompilation.Create(
             assemblyName: "Routya.GeneratorHarness.Referenced",
@@ -60,12 +64,25 @@ public static class GeneratorHarness
 
         peStream.Position = 0;
 
-        return Run(source, References.Add(MetadataReference.CreateFromStream(peStream)));
+        return Run(source, References.Add(MetadataReference.CreateFromStream(peStream)), generateDispatcher);
     }
 
-    public static GeneratorRunResult Run(string source) => Run(source, References);
+    /// <summary>
+    /// Runs the generator over <paramref name="source"/>.
+    /// </summary>
+    /// <param name="generateDispatcher">
+    /// The value of the RoutyaGenerateDispatcher MSBuild property, or null to leave the property
+    /// unset so the generator decides for itself from whether the source calls AddGeneratedRoutya.
+    /// It defaults to true because most tests are about what the generator emits rather than about
+    /// whether it decides to emit at all, and a test snippet rarely composes a container.
+    /// </param>
+    public static GeneratorRunResult Run(string source, bool? generateDispatcher = true)
+        => Run(source, References, generateDispatcher);
 
-    private static GeneratorRunResult Run(string source, ImmutableArray<MetadataReference> references)
+    private static GeneratorRunResult Run(
+        string source,
+        ImmutableArray<MetadataReference> references,
+        bool? generateDispatcher)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(
             source,
@@ -86,7 +103,9 @@ public static class GeneratorHarness
             .Where(d => d.Severity == DiagnosticSeverity.Error)
             .ToImmutableArray();
 
-        var driver = CSharpGeneratorDriver.Create(new HandlerRegistrationGenerator());
+        var driver = CSharpGeneratorDriver.Create(
+            new[] { new HandlerRegistrationGenerator().AsSourceGenerator() },
+            optionsProvider: new HarnessOptionsProvider(generateDispatcher));
 
         driver.RunGeneratorsAndUpdateCompilation(
             compilation,
@@ -185,4 +204,48 @@ public sealed class GeneratorRunResult
 
     private static string Format(ImmutableArray<Diagnostic> diagnostics)
         => string.Join("\n", diagnostics.Select(d => $"  {d.Id}: {d.GetMessage()}"));
+}
+
+/// <summary>
+/// Supplies the RoutyaGenerateDispatcher MSBuild property to the generator, the same way the
+/// compiler supplies it from a CompilerVisibleProperty in a real build.
+/// </summary>
+internal sealed class HarnessOptionsProvider : AnalyzerConfigOptionsProvider
+{
+    private readonly AnalyzerConfigOptions _global;
+
+    public HarnessOptionsProvider(bool? generateDispatcher)
+    {
+        _global = new HarnessOptions(generateDispatcher);
+    }
+
+    public override AnalyzerConfigOptions GlobalOptions => _global;
+
+    public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => HarnessOptions.Empty;
+
+    public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => HarnessOptions.Empty;
+}
+
+internal sealed class HarnessOptions : AnalyzerConfigOptions
+{
+    public static readonly HarnessOptions Empty = new HarnessOptions(null);
+
+    private readonly bool? _generateDispatcher;
+
+    public HarnessOptions(bool? generateDispatcher)
+    {
+        _generateDispatcher = generateDispatcher;
+    }
+
+    public override bool TryGetValue(string key, out string value)
+    {
+        if (key == "build_property.RoutyaGenerateDispatcher" && _generateDispatcher.HasValue)
+        {
+            value = _generateDispatcher.Value ? "true" : "false";
+            return true;
+        }
+
+        value = null!;
+        return false;
+    }
 }

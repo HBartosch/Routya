@@ -514,6 +514,43 @@ If your parallel handlers need to share scoped state, they are not independent, 
 
 ---
 
+## 📦 Which project generates the dispatcher
+
+**The generator emits into the project that calls `AddGeneratedRoutya`, and nowhere else.**
+
+`Routya.Generated` is a fixed, public namespace, so two assemblies in one reference chain cannot
+both define `IGeneratedRoutya` without colliding as `CS0436`. The project that composes the
+container is the one that should own it. Nothing needs configuring for the usual layout:
+
+| Project | Calls `AddGeneratedRoutya` | Generates |
+|---|---|---|
+| `Shop.Application` (handlers live here) | no | nothing |
+| `Shop.Api` (composition root) | yes | the dispatcher, covering handlers in both projects |
+| `Shop.Tests` (references `Shop.Api`) | no | nothing |
+
+Handlers in referenced assemblies are found automatically, so the API project's dispatcher covers
+the Application project's handlers without the Application project generating anything itself.
+
+### Overriding the decision
+
+| Diagnostic | Meaning | What to do |
+|---|---|---|
+| `ROUTYA008` (Info) | Handlers found, but this project never calls `AddGeneratedRoutya` | Usually nothing. This is the normal shape for a library project |
+| `ROUTYA009` (Warning) | Two assemblies in one chain both generate a dispatcher | Set the property below to `false` in whichever does not compose the container |
+
+```xml
+<PropertyGroup>
+  <!-- true: generate here even though AddGeneratedRoutya is not called in this project -->
+  <!-- false: never generate here -->
+  <RoutyaGenerateDispatcher>false</RoutyaGenerateDispatcher>
+</PropertyGroup>
+```
+
+Set it to `true` when this project registers through a helper in another assembly, or by
+reflection, so there is no call for the generator to see.
+
+---
+
 ## ⚙️ Handler lifetimes with the source generator
 
 > **The two dispatch paths have different defaults.** `AddRoutya` registers handlers as **Scoped**.

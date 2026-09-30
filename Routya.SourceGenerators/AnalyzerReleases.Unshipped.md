@@ -11,3 +11,6 @@ ROUTYA003 | Routya.SourceGenerator | Info | Handler discovered
 ROUTYA004 | Routya.SourceGenerator | Info | Code generation complete
 ROUTYA005 | Routya.SourceGenerator | Warning | No typed dispatch member generated for handler
 ROUTYA006 | Routya.SourceGenerator | Warning | Handler in a referenced assembly is not accessible
+ROUTYA007 | Routya.SourceGenerator | Info | Generated dispatcher already provided by a referenced assembly
+ROUTYA008 | Routya.SourceGenerator | Info | No generated dispatcher was requested
+ROUTYA009 | Routya.SourceGenerator | Warning | More than one assembly generates a Routya dispatcher

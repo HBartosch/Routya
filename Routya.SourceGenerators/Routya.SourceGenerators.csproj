@@ -44,6 +44,13 @@
     <None Include="..\Routya.Core\PackageIconResized.png" Pack="true" PackagePath="" />
     <!-- Include the generator DLL in the analyzer path -->
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <!--
+      Exposes RoutyaGenerateDispatcher to the generator in consuming projects. Both folders are
+      needed: build applies to a direct reference on this package, buildTransitive to a reference
+      that arrives through the Routya meta package, which is how most consumers get it.
+    -->
+    <None Include="build\Routya.SourceGenerators.props" Pack="true" PackagePath="build" />
+    <None Include="buildTransitive\Routya.SourceGenerators.props" Pack="true" PackagePath="buildTransitive" />
   </ItemGroup>
 
 </Project>

@@ -42,6 +42,30 @@ Versions follow [Semantic Versioning](https://semver.org/).
   code lives in the consuming assembly, so such a handler is genuinely unreachable from it. It is
   skipped with a diagnostic naming the handler and the assembly, rather than going silently missing
   at runtime.
+- `ROUTYA008` and `ROUTYA009` diagnostics covering which project owns the generated dispatcher, and
+  the `RoutyaGenerateDispatcher` MSBuild property to override that decision. See **Fixed** below.
+
+### Fixed
+
+- **Every project that referenced the generator emitted its own dispatcher, and they conflicted.**
+  `Routya.Generated` is a fixed, public namespace, so two assemblies in one reference chain cannot
+  both define `IGeneratedRoutya`. In a layered solution the Application, API and test projects each
+  emitted a copy, and the build filled with `CS0436` type conflicts. The compiler resolves such a
+  conflict in favour of the source declaration, so a caller could silently bind to a dispatcher
+  other than the one the application registered at startup.
+
+  The generator now emits into the project that composes the container, identified by its call to
+  `AddGeneratedRoutya`, and nowhere else. Detection is purely syntactic, which is what makes it
+  self consistent: the method being called is itself generated, so it cannot be bound before the
+  decision to generate has been taken. Projects that already call `AddGeneratedRoutya` need no
+  change.
+
+  A project that declares handlers but never calls it now reports `ROUTYA008` at Info severity and
+  generates nothing, which is the correct outcome for an Application project in a layered solution.
+  Where a project must generate anyway, because it registers through a helper in another assembly
+  or by reflection, set `<RoutyaGenerateDispatcher>true</RoutyaGenerateDispatcher>`. Setting it to
+  `false` suppresses generation outright, which is how a project that genuinely composes its own
+  container while referencing one that also does resolves the `ROUTYA009` warning.
 
 ---
 
