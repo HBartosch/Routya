@@ -796,6 +796,9 @@ dotnet run
 | POST | `/products` | Create a product |
 | GET | `/products/stream` | Stream products via `IAsyncEnumerable<T>` |
 | POST | `/orders/{id}/shipped` | Publish a notification to two handlers |
+| GET | `/customers/{id}` | Handler from the referenced Application project. Returns its instance id, which changes per request under `ServiceLifetime.Scoped` |
+| GET | `/status` | Handler pinned with `[RoutyaHandler(ServiceLifetime.Singleton)]`. Its instance id never changes |
+| POST | `/customers/{id}/registered` | Publish a notification handled in the referenced Application project |
 
 ---
 
@@ -815,3 +818,30 @@ dotnet run
 # http://localhost:5079
 ```
 
+
+---
+
+## 🖥️ Console demos
+
+Smaller, single file examples. Each one runs with `dotnet run` from its own directory.
+
+### Source generator path
+
+| Project | Target | Demonstrates |
+|---|---|---|
+| [`Routya.SourceGen.Demo`](./Routya.SourceGen.Demo) | net10.0 | Request/response and notification dispatch, an open-generic `LoggingPipelineBehavior<TRequest, TResponse>`, and streaming |
+| [`Routya.SourceGen.DatabaseDemo`](./Routya.SourceGen.DatabaseDemo) | net8.0 | Commands and queries against an in-memory SQLite database, with a notification raised after each write |
+
+### Runtime dispatch path
+
+| Project | Target | Demonstrates |
+|---|---|---|
+| [`Routya.Demo`](./Routya.Demo) | net8.0 | Scoped dispatch, synchronous `Send` alongside `SendAsync`, and two stacked pipeline behaviors, `LoggingBehavior` and `ValidationBehavior` |
+| [`Routya.Demo.Console`](./Routya.Demo.Console) | net8.0 | The smallest complete example: assembly scanning, scoped dispatch, synchronous and asynchronous sends |
+| [`Routya.Notification.Demo`](./Routya.Notification.Demo) | net8.0 | `PublishAsync` and `PublishParallelAsync` side by side, so the sequential and parallel fan-out strategies can be compared |
+| [`Routya.Demo.NetFramework`](./Routya.Demo.NetFramework) | .NET Framework 4.8 | That `Routya.Core` runs on the full .NET Framework, not only on modern .NET |
+
+> **Note on `Routya.SourceGen.Demo`.** Its streaming example predates 4.0.0 and still uses the older
+> `IRequest<IAsyncEnumerable<T>>` shape rather than the first-class `IStreamRequest<T>` and
+> `CreateStream` API. Both Web API demos above use the current API, so prefer those as the streaming
+> reference.

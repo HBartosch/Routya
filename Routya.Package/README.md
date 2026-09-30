@@ -82,10 +82,23 @@ await routya.PublishAsync(new UserCreatedNotification { UserId = 456 });
 
 See working demos in the [GitHub repository](https://github.com/HBartosch/Routya):
 
+**Source generator path** (`IGeneratedRoutya`)
+
 | Project | Description |
 |---|---|
 | [Routya.WebApi.SourceGen.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.WebApi.SourceGen.Demo) | ASP.NET Core minimal API — CRUD, pipeline behaviors, notification fan-out, `IAsyncEnumerable<T>` streaming |
-| [Routya.SourceGen.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.SourceGen.Demo) | Console app — basic request/response and notification dispatch |
+| [Routya.WebApi.SourceGen.Demo.Application](https://github.com/HBartosch/Routya/tree/main/Routya.WebApi.SourceGen.Demo.Application) | The class library holding the handlers for the API above. Shows referenced assembly discovery and `[RoutyaHandler]` lifetime overrides |
+| [Routya.SourceGen.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.SourceGen.Demo) | Console app — request/response and notifications, an open-generic logging pipeline behavior, and streaming |
+| [Routya.SourceGen.DatabaseDemo](https://github.com/HBartosch/Routya/tree/main/Routya.SourceGen.DatabaseDemo) | Console app — commands and queries against an in-memory SQLite database, with notifications on write |
+
+**Runtime dispatch path** (`IRoutya`)
+
+| Project | Description |
+|---|---|
+| [Routya.WebApi.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.WebApi.Demo) | ASP.NET Core — EF Core with SQL Server, all three handler lifetimes, `IStreamRequest<T>` streaming straight from the database |
+| [Routya.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.Demo) | Console app — scoped dispatch, synchronous and asynchronous sends, two stacked pipeline behaviors |
+| [Routya.Notification.Demo](https://github.com/HBartosch/Routya/tree/main/Routya.Notification.Demo) | Console app — `PublishAsync` and `PublishParallelAsync` side by side |
+| [Routya.Demo.NetFramework](https://github.com/HBartosch/Routya/tree/main/Routya.Demo.NetFramework) | .NET Framework 4.8 — confirms `Routya.Core` runs on the full framework |
 
 ---
 
