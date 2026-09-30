@@ -718,6 +718,15 @@ dependency. Choose it for those reasons, not for throughput.
 
 ### Source Generator demo — [`Routya.WebApi.SourceGen.Demo`](./Routya.WebApi.SourceGen.Demo)
 
+> Handlers live in a **separate project**,
+> [`Routya.WebApi.SourceGen.Demo.Application`](./Routya.WebApi.SourceGen.Demo.Application), which is
+> the shape most real solutions use. That project does not reference the source generator at all; the
+> generator runs in the Web project and finds those handlers by reading the assembly's metadata.
+>
+> Two endpoints demonstrate lifetimes. `GET /customers/{id}` returns the handler's instance id and
+> changes between requests, because the demo passes `ServiceLifetime.Scoped`. `GET /status` uses a
+> handler pinned with `[RoutyaHandler(ServiceLifetime.Singleton)]` and never changes.
+
 The recommended starting point if you're using `IGeneratedRoutya`. Demonstrates:
 - ✅ **Compile-time dispatch** via `AddGeneratedRoutya()` — no reflection, no assembly scanning
 - ✅ **Open-generic pipeline behavior** (`LoggingBehavior<TRequest, TResponse>`)
