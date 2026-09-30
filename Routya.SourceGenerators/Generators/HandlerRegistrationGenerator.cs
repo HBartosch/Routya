@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using System;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Routya.SourceGenerators.Emitters;
@@ -21,6 +22,7 @@ namespace Routya.SourceGenerators.Generators
         private const string INotificationHandlerName = "Routya.Core.Abstractions.INotificationHandler";
         private const string IStreamRequestHandlerName = "Routya.Core.Abstractions.IStreamRequestHandler";
         private const string RoutyaCoreAssemblyName = "Routya.Core";
+        private const string RoutyaHandlerAttributeName = "RoutyaHandlerAttribute";
 
         private static bool IsRequestHandler(INamedTypeSymbol iface)
             => iface.IsRoutyaInterface("IRequestHandler", arity: 2);
@@ -239,7 +241,8 @@ namespace Routya.SourceGenerators.Generators
                 ResponseType = typeArgs[1],
                 IsAsync = isAsync,
                 IsNotification = false,
-                Lifetime = DetectLifetime(handler),
+                Lifetime = DetectExplicitLifetime(handler) ?? ServiceLifetime.Transient,
+                HasExplicitLifetime = DetectExplicitLifetime(handler).HasValue,
                 HandlerInterfaceName = isAsync ? IAsyncRequestHandlerName : IRequestHandlerName
             };
         }
@@ -258,7 +261,8 @@ namespace Routya.SourceGenerators.Generators
                 ResponseType = null,
                 IsAsync = true, // Notification handlers are always async
                 IsNotification = true,
-                Lifetime = DetectLifetime(handler),
+                Lifetime = DetectExplicitLifetime(handler) ?? ServiceLifetime.Transient,
+                HasExplicitLifetime = DetectExplicitLifetime(handler).HasValue,
                 HandlerInterfaceName = INotificationHandlerName
             };
         }
@@ -390,13 +394,38 @@ namespace Routya.SourceGenerators.Generators
             return false;
         }
 
-        private static ServiceLifetime DetectLifetime(INamedTypeSymbol handler)
+        /// <summary>
+        /// Reads an explicit lifetime from a RoutyaHandler attribute, if one is present.
+        /// </summary>
+        /// <remarks>
+        /// Returning null means the handler did not ask for a particular lifetime, so its
+        /// registration defers to whatever is passed to AddGeneratedRoutya rather than being fixed
+        /// when the code is generated.
+        /// </remarks>
+        private static ServiceLifetime? DetectExplicitLifetime(INamedTypeSymbol handler)
         {
-            // Look for lifetime attributes or conventions
-            // Default to Transient for stateless handlers (matches MediatR behavior)
-            // Transient handlers are created per call but don't show in allocation tracking
-            // since they're short-lived and immediately eligible for GC
-            return ServiceLifetime.Transient;
+            foreach (var attribute in handler.GetAttributes())
+            {
+                var attributeClass = attribute.AttributeClass;
+
+                if (attributeClass is null)
+                    continue;
+
+                if (attributeClass.Name != RoutyaHandlerAttributeName)
+                    continue;
+
+                if (attributeClass.ContainingNamespace?.ToDisplayString() != SymbolNames.RoutyaAbstractionsNamespace)
+                    continue;
+
+                if (attribute.ConstructorArguments.Length == 1
+                    && attribute.ConstructorArguments[0].Value is int value
+                    && Enum.IsDefined(typeof(ServiceLifetime), value))
+                {
+                    return (ServiceLifetime)value;
+                }
+            }
+
+            return null;
         }
 
     }

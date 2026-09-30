@@ -153,3 +153,28 @@ public class CountProductsHandler : IStreamRequestHandler<CountProductsQuery, in
         }
     }
 }
+
+// ── Lifetime configuration ──────────────────────────────────────────────────
+
+public record LifetimeProbeRequest : IRequest<Guid>;
+
+// No attribute, so this follows whatever lifetime AddGeneratedRoutya was given.
+public class LifetimeProbeHandler : IAsyncRequestHandler<LifetimeProbeRequest, Guid>
+{
+    private readonly Guid _instanceId = Guid.NewGuid();
+
+    public Task<Guid> HandleAsync(LifetimeProbeRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_instanceId);
+}
+
+public record PinnedSingletonRequest : IRequest<Guid>;
+
+// Pinned to Singleton, so it ignores the AddGeneratedRoutya argument entirely.
+[RoutyaHandler(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
+public class PinnedSingletonHandler : IAsyncRequestHandler<PinnedSingletonRequest, Guid>
+{
+    private readonly Guid _instanceId = Guid.NewGuid();
+
+    public Task<Guid> HandleAsync(PinnedSingletonRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_instanceId);
+}

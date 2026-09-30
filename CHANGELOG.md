@@ -20,6 +20,16 @@ Versions follow [Semantic Versioning](https://semver.org/).
   Only assemblies that themselves reference `Routya.Core` are walked, checked on assembly identity
   before any type is enumerated, so the cost is proportional to the number of projects actually
   using Routya rather than to the size of the reference closure.
+- **The generated handler lifetime is now configurable.** `AddGeneratedRoutya` takes an optional
+  `ServiceLifetime`, and a new `[RoutyaHandler(ServiceLifetime)]` attribute overrides it for an
+  individual handler. The generator previously hardcoded `Transient` with no way to change it, which
+  a project migrating from runtime dispatch had to simply accept.
+
+  The default stays `Transient`, so no existing generated registration changes on upgrade. Note that
+  the runtime `AddRoutya` defaults to `Scoped`, so **the two paths disagree**, and moving from one to
+  the other changes handler lifetime unless a lifetime is passed. That difference existed before and
+  was undocumented; it is now stated in the README, on the attribute, and in the generated method's
+  own documentation comment.
 - `ROUTYA006` warning when a handler in a referenced assembly is not public. Generated registration
   code lives in the consuming assembly, so such a handler is genuinely unreachable from it. It is
   skipped with a diagnostic naming the handler and the assembly, rather than going silently missing

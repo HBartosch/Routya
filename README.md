@@ -55,7 +55,7 @@ public class MyController : ControllerBase
 - **⚡ Source generation** - Compile-time code generation for maximum speed
 - **🌊 Streaming** - `IStreamRequest<T>` with lazy, unbuffered `IAsyncEnumerable<T>` and behaviours that wrap the whole enumeration. See [Streaming](#-streaming)
 - **🔬 Trimming and Native AOT** - No IL warnings, verified with a running Native AOT binary. See [Trimming and Native AOT](#-trimming-and-native-aot)
-- ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
+- ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped or Transient, globally or per handler, on both dispatch paths. See [Handler lifetimes](#️-handler-lifetimes-with-the-source-generator)
 - 🧩 Pipeline behavior support for cross-cutting concerns
 - 🔄 Supports both **sequential** and **parallel** notification dispatching
 - 🎯 **Multi-framework support** - netstandard2.0, netstandard2.1, .NET 8, .NET 9, .NET 10
@@ -511,6 +511,39 @@ this context before a previous operation completed` when that happens. The extra
 
 If your parallel handlers need to share scoped state, they are not independent, and
 `PublishAsync` is the correct choice.
+
+---
+
+## ⚙️ Handler lifetimes with the source generator
+
+> **The two dispatch paths have different defaults.** `AddRoutya` registers handlers as **Scoped**.
+> `AddGeneratedRoutya` registers them as **Transient**. Moving a project from runtime dispatch to
+> the source generator therefore changes handler lifetime unless you say otherwise.
+
+Set the lifetime for all generated handlers:
+
+```C#
+services.AddGeneratedRoutya(ServiceLifetime.Scoped);
+```
+
+Override an individual handler that genuinely differs:
+
+```C#
+[RoutyaHandler(ServiceLifetime.Singleton)]
+public class GetExchangeRatesHandler : IAsyncRequestHandler<GetExchangeRates, Rates>
+{
+    // holds a cache, so one instance for the whole application
+}
+```
+
+The attribute wins over the parameter, so a solution can pass `Scoped` for the bulk of its handlers
+and pin the few that need something else. A `Singleton` handler must be thread safe and must not
+depend on a scoped service such as a `DbContext`.
+
+| | Default | How to change it |
+|---|---|---|
+| `AddRoutya` (runtime) | `Scoped` | `cfg => cfg.HandlerLifetime = ...`, or per handler via `AddRoutya*Handler` |
+| `AddGeneratedRoutya` | `Transient` | `AddGeneratedRoutya(lifetime)`, or per handler via `[RoutyaHandler]` |
 
 ---
 
