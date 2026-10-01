@@ -16,7 +16,7 @@ It provides a flexible way to route requests/responses and notifications to thei
 Get **compile-time code generation** with no reflection on the dispatch path:
 
 ```bash
-dotnet add package Routya.SourceGenerators --version 4.0.0
+dotnet add package Routya.SourceGenerators --version 4.1.0
 ```
 
 ```csharp
@@ -55,7 +55,7 @@ public class MyController : ControllerBase
 - **⚡ Source generation** - Compile-time code generation for maximum speed
 - **🌊 Streaming** - `IStreamRequest<T>` with lazy, unbuffered `IAsyncEnumerable<T>` and behaviours that wrap the whole enumeration. See [Streaming](#-streaming)
 - **🔬 Trimming and Native AOT** - No IL warnings, verified with a running Native AOT binary. See [Trimming and Native AOT](#-trimming-and-native-aot)
-- ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped, or Transient per handler
+- ⚙️ **Configurable handler lifetimes** - Choose Singleton, Scoped or Transient, globally or per handler, on both dispatch paths. See [Handler lifetimes](#️-handler-lifetimes-with-the-source-generator)
 - 🧩 Pipeline behavior support for cross-cutting concerns
 - 🔄 Supports both **sequential** and **parallel** notification dispatching
 - 🎯 **Multi-framework support** - netstandard2.0, netstandard2.1, .NET 8, .NET 9, .NET 10
@@ -68,22 +68,35 @@ public class MyController : ControllerBase
 
 ### Source Generator (recommended for new projects)
 ```bash
-dotnet add package Routya.SourceGenerators --version 4.0.0
+dotnet add package Routya.SourceGenerators --version 4.1.0
 ```
 Includes `Routya.Core` automatically. Compile time dispatch, no reflection, and the only option that
 is verified under trimming and Native AOT.
 
 ### Runtime Dispatcher
 ```bash
-dotnet add package Routya.Core --version 4.0.0
+dotnet add package Routya.Core --version 4.1.0
 ```
 Use for existing projects or when runtime flexibility is needed.
 
 ### Everything in one package
 ```bash
-dotnet add package Routya --version 4.0.0
+dotnet add package Routya --version 4.1.0
 ```
 Pulls in both `Routya.Core` and `Routya.SourceGenerators`.
+
+### ⚠️ Behaviour change in v4.1.0
+
+**The generator now emits a dispatcher only into the project that calls `AddGeneratedRoutya`.**
+If your composition root already calls it, nothing changes, and it now also covers handlers in
+referenced assemblies.
+
+One shape breaks: a project that used `IGeneratedRoutya` but did not call `AddGeneratedRoutya` in
+that same project previously got a dispatcher anyway and now gets nothing, so those injection sites
+stop compiling. That shape was already producing `CS0436` conflicts and could bind to a dispatcher
+other than the one registered at startup. Either resolve `IGeneratedRoutya` from the project that
+composes the container, or set `<RoutyaGenerateDispatcher>true</RoutyaGenerateDispatcher>` to keep
+generating locally. See [Which project generates the dispatcher](#-which-project-generates-the-dispatcher).
 
 ### ⚠️ Breaking Changes in v4.0.0
 
@@ -514,6 +527,104 @@ If your parallel handlers need to share scoped state, they are not independent, 
 
 ---
 
+## 📦 Which project generates the dispatcher
+
+**The generator emits into the project that calls `AddGeneratedRoutya`, and nowhere else.**
+
+`Routya.Generated` is a fixed, public namespace, so two assemblies in one reference chain cannot
+both define `IGeneratedRoutya` without colliding as `CS0436`. The project that composes the
+container is the one that should own it. Nothing needs configuring for the usual layout:
+
+| Project | Calls `AddGeneratedRoutya` | Generates |
+|---|---|---|
+| `Shop.Application` (handlers live here) | no | nothing |
+| `Shop.Api` (composition root) | yes | the dispatcher, covering handlers in both projects |
+| `Shop.Tests` (references `Shop.Api`) | no | nothing |
+
+Handlers in referenced assemblies are found automatically, so the API project's dispatcher covers
+the Application project's handlers without the Application project generating anything itself.
+
+### Overriding the decision
+
+| Diagnostic | Meaning | What to do |
+|---|---|---|
+| `ROUTYA008` (Info) | Handlers found, but this project never calls `AddGeneratedRoutya` | Usually nothing. This is the normal shape for a library project |
+| `ROUTYA009` (Warning) | Two assemblies in one chain both generate a dispatcher | Set the property below to `false` in whichever does not compose the container |
+
+```xml
+<PropertyGroup>
+  <!-- true: generate here even though AddGeneratedRoutya is not called in this project -->
+  <!-- false: never generate here -->
+  <RoutyaGenerateDispatcher>false</RoutyaGenerateDispatcher>
+</PropertyGroup>
+```
+
+Set it to `true` when this project registers through a helper in another assembly, or by
+reflection, so there is no call for the generator to see.
+
+---
+
+## ⚙️ Handler lifetimes with the source generator
+
+> **The two dispatch paths have different defaults.** `AddRoutya` registers handlers as **Scoped**.
+> `AddGeneratedRoutya` registers them as **Transient**. Moving a project from runtime dispatch to
+> the source generator therefore changes handler lifetime unless you say otherwise.
+
+Set the lifetime for all generated handlers:
+
+```C#
+services.AddGeneratedRoutya(ServiceLifetime.Scoped);
+```
+
+Override an individual handler that genuinely differs:
+
+```C#
+[RoutyaHandler(ServiceLifetime.Singleton)]
+public class GetExchangeRatesHandler : IAsyncRequestHandler<GetExchangeRates, Rates>
+{
+    // holds a cache, so one instance for the whole application
+}
+```
+
+The attribute wins over the parameter, so a solution can pass `Scoped` for the bulk of its handlers
+and pin the few that need something else. A `Singleton` handler must be thread safe and must not
+depend on a scoped service such as a `DbContext`.
+
+| | Default | How to change it |
+|---|---|---|
+| `AddRoutya` (runtime) | `Scoped` | `cfg => cfg.HandlerLifetime = ...`, or per handler via `AddRoutya*Handler` |
+| `AddGeneratedRoutya` | `Transient` | `AddGeneratedRoutya(lifetime)`, or per handler via `[RoutyaHandler]` |
+
+### Why the defaults differ
+
+Not an oversight. **The runtime dispatcher creates a DI scope per dispatch; the generated one does
+not.** `IRoutya` can therefore resolve a `Scoped` handler no matter where it was itself resolved
+from, because it makes its own scope. `IGeneratedRoutya` uses whatever provider it was given, so a
+`Scoped` handler only works if you resolved `IGeneratedRoutya` from inside a scope.
+
+`Transient` is the default for the generated path because it is the only lifetime that works
+wherever you resolve from.
+
+**In ASP.NET Core this is a non-issue**: controllers, minimal API endpoints and anything injected
+into them resolve from the request scope, so `AddGeneratedRoutya(ServiceLifetime.Scoped)` is safe
+and gives you one handler per request.
+
+**Be careful when dispatching outside a request**, for example from a singleton service, an
+`IHostedService` that does not create its own scope, or a console application. There, a `Scoped`
+handler throws `InvalidOperationException`. Either keep `Transient`, or create a scope yourself:
+
+```C#
+using var scope = serviceProvider.CreateScope();
+var routya = scope.ServiceProvider.GetRequiredService<IGeneratedRoutya>();
+await routya.SendAsync(new DoWork());
+```
+
+A `[RoutyaHandler(ServiceLifetime.Singleton)]` handler must additionally not depend on any `Scoped`
+service, such as a `DbContext`. That is a captive dependency, and scope validation catches it in
+Development but not necessarily in Production.
+
+---
+
 ## 🌊 Streaming
 
 Use `IStreamRequest<TResponse>` when a handler produces a sequence rather than a single response.
@@ -596,6 +707,11 @@ public class CountingBehavior<TRequest, TResponse> : IStreamPipelineBehavior<TRe
 }
 ```
 
+> **Run it.** [`Routya.SourceGen.Demo`](./Routya.SourceGen.Demo) streams 500 records in five
+> chunks through exactly this arrangement. Its output interleaves the handler producing a
+> chunk, the behavior observing it, and the consumer receiving it, with elapsed timings, which
+> is the difference from a request behavior made visible.
+
 ### Scope lifetime
 
 Under `RoutyaDispatchScope.Scoped`, the dispatch scope lives for the **whole enumeration** and is
@@ -657,6 +773,15 @@ dependency. Choose it for those reasons, not for throughput.
 
 ### Source Generator demo — [`Routya.WebApi.SourceGen.Demo`](./Routya.WebApi.SourceGen.Demo)
 
+> Handlers live in a **separate project**,
+> [`Routya.WebApi.SourceGen.Demo.Application`](./Routya.WebApi.SourceGen.Demo.Application), which is
+> the shape most real solutions use. That project does not reference the source generator at all; the
+> generator runs in the Web project and finds those handlers by reading the assembly's metadata.
+>
+> Two endpoints demonstrate lifetimes. `GET /customers/{id}` returns the handler's instance id and
+> changes between requests, because the demo passes `ServiceLifetime.Scoped`. `GET /status` uses a
+> handler pinned with `[RoutyaHandler(ServiceLifetime.Singleton)]` and never changes.
+
 The recommended starting point if you're using `IGeneratedRoutya`. Demonstrates:
 - ✅ **Compile-time dispatch** via `AddGeneratedRoutya()` — no reflection, no assembly scanning
 - ✅ **Open-generic pipeline behavior** (`LoggingBehavior<TRequest, TResponse>`)
@@ -676,6 +801,9 @@ dotnet run
 | POST | `/products` | Create a product |
 | GET | `/products/stream` | Stream products via `IAsyncEnumerable<T>` |
 | POST | `/orders/{id}/shipped` | Publish a notification to two handlers |
+| GET | `/customers/{id}` | Handler from the referenced Application project. Returns its instance id, which changes per request under `ServiceLifetime.Scoped` |
+| GET | `/status` | Handler pinned with `[RoutyaHandler(ServiceLifetime.Singleton)]`. Its instance id never changes |
+| POST | `/customers/{id}/registered` | Publish a notification handled in the referenced Application project |
 
 ---
 
@@ -695,3 +823,25 @@ dotnet run
 # http://localhost:5079
 ```
 
+
+---
+
+## 🖥️ Console demos
+
+Smaller, single file examples. Each one runs with `dotnet run` from its own directory.
+
+### Source generator path
+
+| Project | Target | Demonstrates |
+|---|---|---|
+| [`Routya.SourceGen.Demo`](./Routya.SourceGen.Demo) | net10.0 | Request/response and notification dispatch, an open-generic `LoggingPipelineBehavior<TRequest, TResponse>`, and `IStreamRequest<T>` streaming wrapped in a `StreamLoggingBehavior<TRequest, TResponse>`. Its output interleaves production, the behavior observing each item, and consumption, which is the clearest demonstration of why stream behaviors differ from request behaviors |
+| [`Routya.SourceGen.DatabaseDemo`](./Routya.SourceGen.DatabaseDemo) | net8.0 | Commands and queries against an in-memory SQLite database, with a notification raised after each write |
+
+### Runtime dispatch path
+
+| Project | Target | Demonstrates |
+|---|---|---|
+| [`Routya.Demo`](./Routya.Demo) | net8.0 | Scoped dispatch, synchronous `Send` alongside `SendAsync`, and two stacked pipeline behaviors, `LoggingBehavior` and `ValidationBehavior` |
+| [`Routya.Demo.Console`](./Routya.Demo.Console) | net8.0 | The smallest complete example: assembly scanning, scoped dispatch, synchronous and asynchronous sends |
+| [`Routya.Notification.Demo`](./Routya.Notification.Demo) | net8.0 | `PublishAsync` and `PublishParallelAsync` side by side, so the sequential and parallel fan-out strategies can be compared |
+| [`Routya.Demo.NetFramework`](./Routya.Demo.NetFramework) | .NET Framework 4.8 | That `Routya.Core` runs on the full .NET Framework, not only on modern .NET |

@@ -34,6 +34,7 @@ namespace Routya.SourceGenerators.Emitters
             sb.AppendLine("    /// Type-specific dispatcher interface generated at compile-time.");
             sb.AppendLine("    /// Use this interface for dependency injection to get concrete type-specific dispatch without generic fallbacks.");
             sb.AppendLine("    /// </summary>");
+            GeneratedTypeAttributes.AppendForInterface(sb, "    ");
             sb.AppendLine("    public interface IGeneratedRoutya");
             sb.AppendLine("    {");
             
@@ -87,13 +88,22 @@ namespace Routya.SourceGenerators.Emitters
             sb.AppendLine("    /// <summary>");
             sb.AppendLine("    /// Auto-generated handler registration extensions for Routya.");
             sb.AppendLine("    /// </summary>");
+            GeneratedTypeAttributes.AppendForType(sb, "    ");
             sb.AppendLine("    public static class RoutyaGeneratedExtensions");
             sb.AppendLine("    {");
             sb.AppendLine("        /// <summary>");
             sb.AppendLine("        /// Registers all auto-discovered handlers using source generation.");
             sb.AppendLine("        /// This provides zero-overhead, compile-time optimized dispatching.");
             sb.AppendLine("        /// </summary>");
-            sb.AppendLine("        public static IServiceCollection AddGeneratedRoutya(this IServiceCollection services)");
+            sb.AppendLine("        /// <param name=\"services\">The service collection to add handlers to.</param>");
+            sb.AppendLine("        /// <param name=\"handlerLifetime\">");
+            sb.AppendLine("        /// Lifetime for handlers that do not carry a RoutyaHandler attribute. Defaults to");
+            sb.AppendLine("        /// Transient. Note that the runtime AddRoutya defaults to Scoped, so the two paths");
+            sb.AppendLine("        /// differ unless you say otherwise here.");
+            sb.AppendLine("        /// </param>");
+            sb.AppendLine("        public static IServiceCollection AddGeneratedRoutya(");
+            sb.AppendLine("            this IServiceCollection services,");
+            sb.AppendLine("            ServiceLifetime handlerLifetime = ServiceLifetime.Transient)");
             sb.AppendLine("        {");
             
             // Request handler registrations
@@ -109,10 +119,20 @@ namespace Routya.SourceGenerators.Emitters
                             ? $"IAsyncRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>"
                             : $"IRequestHandler<{handler.RequestType.ToGeneratedName()}, {handler.ResponseType!.ToGeneratedName()}>";
                     
-                    // Register the concrete handler first
-                    sb.AppendLine($"            services.Add{lifetime}<{handler.HandlerType.ToGeneratedName()}>();");
-                    // Then register the interface → implementation mapping
-                    sb.AppendLine($"            services.Add{lifetime}<{handlerInterface}>(sp => sp.GetRequiredService<{handler.HandlerType.ToGeneratedName()}>());");
+                    var concrete = handler.HandlerType.ToGeneratedName();
+
+                    if (handler.HasExplicitLifetime)
+                    {
+                        // A RoutyaHandler attribute fixes this handler's lifetime regardless of the
+                        // argument passed to AddGeneratedRoutya.
+                        sb.AppendLine($"            services.Add{lifetime}<{concrete}>();");
+                        sb.AppendLine($"            services.Add{lifetime}<{handlerInterface}>(sp => sp.GetRequiredService<{concrete}>());");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"            services.Add(new ServiceDescriptor(typeof({concrete}), typeof({concrete}), handlerLifetime));");
+                        sb.AppendLine($"            services.Add(new ServiceDescriptor(typeof({handlerInterface}), sp => sp.GetRequiredService<{concrete}>(), handlerLifetime));");
+                    }
                 }
                 sb.AppendLine();
             }
@@ -124,10 +144,19 @@ namespace Routya.SourceGenerators.Emitters
                 foreach (var handler in notificationHandlers)
                 {
                     var lifetime = GetLifetimeString(handler.Lifetime);
-                    // Register concrete handler first
-                    sb.AppendLine($"            services.Add{lifetime}<{handler.HandlerType.ToGeneratedName()}>();");
-                    // Then register interface mapping
-                    sb.AppendLine($"            services.Add{lifetime}<INotificationHandler<{handler.RequestType.ToGeneratedName()}>>(sp => sp.GetRequiredService<{handler.HandlerType.ToGeneratedName()}>());");
+                    var concrete = handler.HandlerType.ToGeneratedName();
+                    var notificationInterface = $"INotificationHandler<{handler.RequestType.ToGeneratedName()}>";
+
+                    if (handler.HasExplicitLifetime)
+                    {
+                        sb.AppendLine($"            services.Add{lifetime}<{concrete}>();");
+                        sb.AppendLine($"            services.Add{lifetime}<{notificationInterface}>(sp => sp.GetRequiredService<{concrete}>());");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"            services.Add(new ServiceDescriptor(typeof({concrete}), typeof({concrete}), handlerLifetime));");
+                        sb.AppendLine($"            services.Add(new ServiceDescriptor(typeof({notificationInterface}), sp => sp.GetRequiredService<{concrete}>(), handlerLifetime));");
+                    }
                 }
                 sb.AppendLine();
             }

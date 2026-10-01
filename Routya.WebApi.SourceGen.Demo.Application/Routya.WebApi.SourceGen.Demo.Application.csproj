@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A separate handlers project, the shape most real solutions use: handlers in an Application
+    project, the generator running in the Web project. Note that this project does NOT reference
+    Routya.SourceGenerators. Only the consuming project runs the generator; handlers here are found
+    by reading this assembly's metadata.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Routya.Core\Routya.Core.csproj" />
+  </ItemGroup>
+
+</Project>

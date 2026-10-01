@@ -43,6 +43,13 @@ namespace Routya.SourceGenerators.Models
             => RequestType.IsExternallyVisible()
                && (ResponseType == null || ResponseType.IsExternallyVisible());
         public ServiceLifetime Lifetime { get; set; } = ServiceLifetime.Transient;
+
+        /// <summary>
+        /// Whether <see cref="Lifetime"/> came from a RoutyaHandler attribute on the handler. When
+        /// false the registration follows the lifetime passed to AddGeneratedRoutya at runtime,
+        /// rather than being fixed at generation time.
+        /// </summary>
+        public bool HasExplicitLifetime { get; set; }
         public string HandlerInterfaceName { get; set; } = null!;
 
         /// <summary>

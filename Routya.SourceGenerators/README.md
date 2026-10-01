@@ -215,11 +215,62 @@ var user = await routya.SendAsync(request); // no type arguments
 
 ---
 
+## Which project generates the dispatcher
+
+**The generator emits into the project that calls `AddGeneratedRoutya`, and nowhere else.**
+
+`Routya.Generated` is a fixed, public namespace, so two assemblies in one reference chain cannot
+both define `IGeneratedRoutya` without colliding as `CS0436`. Handlers in referenced assemblies are
+discovered automatically, so the composition root's dispatcher covers the whole solution and the
+projects holding the handlers generate nothing.
+
+| Project | Calls `AddGeneratedRoutya` | Generates |
+|---|---|---|
+| `Shop.Application` (handlers live here) | no | nothing |
+| `Shop.Api` (composition root) | yes | the dispatcher, covering handlers in both projects |
+| `Shop.Tests` (references `Shop.Api`) | no | nothing |
+
+`ROUTYA008` (Info) reports a project that has handlers but composes no container, which is the
+normal shape for a library project and needs no action. `ROUTYA009` (Warning) reports two
+assemblies in one chain both generating. Override the decision either way with:
+
+```xml
+<PropertyGroup>
+  <RoutyaGenerateDispatcher>false</RoutyaGenerateDispatcher>
+</PropertyGroup>
+```
+
+---
+
+## Handler lifetimes
+
+`AddGeneratedRoutya` registers handlers as **Transient** by default. Pass a lifetime to change it
+for all of them, and override an individual handler with `[RoutyaHandler]`, which wins over the
+parameter:
+
+```csharp
+services.AddGeneratedRoutya(ServiceLifetime.Scoped);
+
+[RoutyaHandler(ServiceLifetime.Singleton)]
+public class GetExchangeRatesHandler : IAsyncRequestHandler<GetExchangeRates, Rates>
+{
+    // holds a cache, so one instance for the whole application
+}
+```
+
+`Transient` is the default because `IGeneratedRoutya` uses whatever provider it was given rather
+than creating a scope per dispatch, so a `Scoped` handler only resolves from inside a scope. In
+ASP.NET Core that is always true of a request, so `ServiceLifetime.Scoped` is safe there. Dispatching
+from a singleton service, an `IHostedService` that makes no scope, or a console application requires
+either `Transient` or a scope you create yourself.
+
+---
+
 ## Limitations
 
-- **Single assembly** — handlers in referenced libraries are not discovered automatically.
 - **Non-generic handler types** — the handler class itself cannot be a generic type (e.g., `class MyHandler<T>`), though request and response types can be.
-- **Public, non-abstract only** — internal or abstract handler classes are ignored.
+- **Non-abstract only** — abstract handler classes are ignored.
+- **Typed members need publicly visible types** — an `internal` handler is registered and dispatched normally, but a typed member on `IGeneratedRoutya` cannot expose an `internal` request or response type, because the interface is public. Such a handler reports `ROUTYA005` and stays reachable through `IRoutya`.
 
 ---
 
@@ -227,8 +278,14 @@ var user = await routya.SendAsync(request); // no type arguments
 
 | Project | Description |
 |---|---|
-| [Routya.SourceGen.Demo](../Routya.SourceGen.Demo) | Console app — basic request/response and notification dispatch via the source generator |
+| [Routya.SourceGen.Demo](../Routya.SourceGen.Demo) | Console app — request/response and notification dispatch, an open-generic request pipeline behavior, and `IStreamRequest<T>` streaming wrapped in a stream pipeline behavior that observes every item |
+| [Routya.SourceGen.DatabaseDemo](../Routya.SourceGen.DatabaseDemo) | Console app — commands and queries against an in-memory SQLite database, with notifications raised on write |
 | [Routya.WebApi.SourceGen.Demo](../Routya.WebApi.SourceGen.Demo) | ASP.NET Core minimal API — CRUD endpoints, open-generic pipeline behavior, notification fan-out, and `IAsyncEnumerable<T>` streaming |
+| [Routya.WebApi.SourceGen.Demo.Application](../Routya.WebApi.SourceGen.Demo.Application) | Class library holding the handlers for the API above. It deliberately does **not** reference the generator, so it demonstrates both referenced assembly discovery and `[RoutyaHandler]` lifetime overrides |
+
+The last pair is the one to read if you are laying out a multiple project solution: the handlers live
+in the class library, the API project is the only one that calls `AddGeneratedRoutya`, and it is
+therefore the only one that generates anything.
 
 ---
 

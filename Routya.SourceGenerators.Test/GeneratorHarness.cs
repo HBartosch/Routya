@@ -1,6 +1,8 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
+using System.IO;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Routya.SourceGenerators.Generators;
 
 namespace Routya.SourceGenerators.Test;
@@ -18,7 +20,69 @@ public static class GeneratorHarness
 {
     private static readonly ImmutableArray<MetadataReference> References = BuildReferences();
 
-    public static GeneratorRunResult Run(string source)
+    /// <summary>
+    /// Compiles <paramref name="referencedSource"/> into a separate assembly, then runs the
+    /// generator over <paramref name="source"/> with that assembly referenced.
+    /// </summary>
+    /// <remarks>
+    /// This is how a multiple project solution actually looks to the generator: the handler lives
+    /// in another assembly and has no syntax tree in the compilation being generated for. A single
+    /// source string cannot reproduce that, because everything shares one compilation.
+    /// </remarks>
+    public static GeneratorRunResult RunWithReferencedAssembly(
+        string referencedSource,
+        string source,
+        bool? generateDispatcher = true)
+    {
+        var referencedCompilation = CSharpCompilation.Create(
+            assemblyName: "Routya.GeneratorHarness.Referenced",
+            syntaxTrees: new[] { CSharpSyntaxTree.ParseText(referencedSource, new CSharpParseOptions(LanguageVersion.Latest)) },
+            references: References,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var referencedErrors = referencedCompilation
+            .GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
+
+        if (!referencedErrors.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                "The referenced source does not compile on its own: "
+                + string.Join(" | ", referencedErrors.Select(d => $"{d.Id}: {d.GetMessage()}")));
+        }
+
+        using var peStream = new MemoryStream();
+        var emitResult = referencedCompilation.Emit(peStream);
+
+        if (!emitResult.Success)
+        {
+            throw new InvalidOperationException(
+                "The referenced source failed to emit: "
+                + string.Join(" | ", emitResult.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
+        }
+
+        peStream.Position = 0;
+
+        return Run(source, References.Add(MetadataReference.CreateFromStream(peStream)), generateDispatcher);
+    }
+
+    /// <summary>
+    /// Runs the generator over <paramref name="source"/>.
+    /// </summary>
+    /// <param name="generateDispatcher">
+    /// The value of the RoutyaGenerateDispatcher MSBuild property, or null to leave the property
+    /// unset so the generator decides for itself from whether the source calls AddGeneratedRoutya.
+    /// It defaults to true because most tests are about what the generator emits rather than about
+    /// whether it decides to emit at all, and a test snippet rarely composes a container.
+    /// </param>
+    public static GeneratorRunResult Run(string source, bool? generateDispatcher = true)
+        => Run(source, References, generateDispatcher);
+
+    private static GeneratorRunResult Run(
+        string source,
+        ImmutableArray<MetadataReference> references,
+        bool? generateDispatcher)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(
             source,
@@ -27,7 +91,7 @@ public static class GeneratorHarness
         var compilation = CSharpCompilation.Create(
             assemblyName: "Routya.GeneratorHarness",
             syntaxTrees: new[] { syntaxTree },
-            references: References,
+            references: references,
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
@@ -39,7 +103,9 @@ public static class GeneratorHarness
             .Where(d => d.Severity == DiagnosticSeverity.Error)
             .ToImmutableArray();
 
-        var driver = CSharpGeneratorDriver.Create(new HandlerRegistrationGenerator());
+        var driver = CSharpGeneratorDriver.Create(
+            new[] { new HandlerRegistrationGenerator().AsSourceGenerator() },
+            optionsProvider: new HarnessOptionsProvider(generateDispatcher));
 
         driver.RunGeneratorsAndUpdateCompilation(
             compilation,
@@ -138,4 +204,48 @@ public sealed class GeneratorRunResult
 
     private static string Format(ImmutableArray<Diagnostic> diagnostics)
         => string.Join("\n", diagnostics.Select(d => $"  {d.Id}: {d.GetMessage()}"));
+}
+
+/// <summary>
+/// Supplies the RoutyaGenerateDispatcher MSBuild property to the generator, the same way the
+/// compiler supplies it from a CompilerVisibleProperty in a real build.
+/// </summary>
+internal sealed class HarnessOptionsProvider : AnalyzerConfigOptionsProvider
+{
+    private readonly AnalyzerConfigOptions _global;
+
+    public HarnessOptionsProvider(bool? generateDispatcher)
+    {
+        _global = new HarnessOptions(generateDispatcher);
+    }
+
+    public override AnalyzerConfigOptions GlobalOptions => _global;
+
+    public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => HarnessOptions.Empty;
+
+    public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => HarnessOptions.Empty;
+}
+
+internal sealed class HarnessOptions : AnalyzerConfigOptions
+{
+    public static readonly HarnessOptions Empty = new HarnessOptions(null);
+
+    private readonly bool? _generateDispatcher;
+
+    public HarnessOptions(bool? generateDispatcher)
+    {
+        _generateDispatcher = generateDispatcher;
+    }
+
+    public override bool TryGetValue(string key, out string value)
+    {
+        if (key == "build_property.RoutyaGenerateDispatcher" && _generateDispatcher.HasValue)
+        {
+            value = _generateDispatcher.Value ? "true" : "false";
+            return true;
+        }
+
+        value = null!;
+        return false;
+    }
 }

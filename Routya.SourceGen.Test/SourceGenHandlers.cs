@@ -153,3 +153,60 @@ public class CountProductsHandler : IStreamRequestHandler<CountProductsQuery, in
         }
     }
 }
+
+// ── Lifetime configuration ──────────────────────────────────────────────────
+
+public record LifetimeProbeRequest : IRequest<Guid>;
+
+// No attribute, so this follows whatever lifetime AddGeneratedRoutya was given.
+public class LifetimeProbeHandler : IAsyncRequestHandler<LifetimeProbeRequest, Guid>
+{
+    private readonly Guid _instanceId = Guid.NewGuid();
+
+    public Task<Guid> HandleAsync(LifetimeProbeRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_instanceId);
+}
+
+public record PinnedSingletonRequest : IRequest<Guid>;
+
+// Pinned to Singleton, so it ignores the AddGeneratedRoutya argument entirely.
+[RoutyaHandler(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
+public class PinnedSingletonHandler : IAsyncRequestHandler<PinnedSingletonRequest, Guid>
+{
+    private readonly Guid _instanceId = Guid.NewGuid();
+
+    public Task<Guid> HandleAsync(PinnedSingletonRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_instanceId);
+}
+
+// ── Lifetime attribute probes ───────────────────────────────────────────────
+
+public class ScopedDependency
+{
+    public Guid Id { get; } = Guid.NewGuid();
+}
+
+public record PinnedScopedRequest : IRequest<Guid>;
+
+[RoutyaHandler(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
+public class PinnedScopedHandler : IAsyncRequestHandler<PinnedScopedRequest, Guid>
+{
+    private readonly Guid _instanceId = Guid.NewGuid();
+
+    public Task<Guid> HandleAsync(PinnedScopedRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_instanceId);
+}
+
+public record SingletonWithScopedDepRequest : IRequest<Guid>;
+
+// Singleton handler that depends on a Scoped service: a captive dependency.
+[RoutyaHandler(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
+public class SingletonWithScopedDepHandler : IAsyncRequestHandler<SingletonWithScopedDepRequest, Guid>
+{
+    private readonly ScopedDependency _dependency;
+
+    public SingletonWithScopedDepHandler(ScopedDependency dependency) => _dependency = dependency;
+
+    public Task<Guid> HandleAsync(SingletonWithScopedDepRequest request, CancellationToken cancellationToken)
+        => Task.FromResult(_dependency.Id);
+}
